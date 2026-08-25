@@ -1,7 +1,6 @@
 
 
 
-
 <!doctype html>
 <html lang="th">
 <head>
@@ -82,12 +81,97 @@ async function compressImageToDataUrl(file, opts = {}) {
   );
   return page;
 }
+function addTeacherStudentRegistration(page, key) {
+  if (key !== 'teacher') return page;
+  const registrationMarkup = `
+      <div class="card p-3 mb-3 bg-sky-50">
+        <button id="teacher-toggle-student-form" type="button" class="w-full flex items-center justify-between text-left">
+          <span class="font-semibold text-sm">ลงทะเบียนนักเรียน / ผู้เข้าร่วม</span>
+          <span id="teacher-toggle-student-icon" class="text-xs text-slate-400">▼ เปิด</span>
+        </button>
+        <div id="teacher-student-form-wrap" class="hidden mt-3">
+          <p class="text-xs text-slate-400 mb-3">เพิ่มนักเรียนในโรงเรียนของคุณ นักเรียนใช้เบอร์โทรศัพท์เป็นตัวระบุ</p>
+          <form id="teacher-student-form" class="space-y-2">
+            <div class="grid grid-cols-2 gap-2">
+              <select id="teacher-student-prefix" required class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm bg-white">
+                <option value="">คำนำหน้าชื่อ</option>
+                <option>เด็กชาย</option><option>เด็กหญิง</option><option>นาย</option>
+                <option>นางสาว</option><option>นาง</option><option>อื่นๆ</option>
+              </select>
+              <input id="teacher-student-name" required placeholder="ชื่อ-นามสกุล" class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm">
+            </div>
+            <input id="teacher-student-phone" required type="tel" placeholder="เบอร์โทรศัพท์นักเรียน" class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm">
+            <button class="btn bg-sky-400 w-full py-2 text-sm font-semibold">บันทึกการลงทะเบียน</button>
+          </form>
+          <p id="teacher-student-msg" class="text-xs mt-2"></p>
+        </div>
+      </div>`;
+  page = page.replace('<input id="search-student"', registrationMarkup + '<input id="search-student"');
+  const registrationScript = `
+document.getElementById('teacher-toggle-student-form').onclick = () => {
+  const wrap = document.getElementById('teacher-student-form-wrap');
+  const isOpen = wrap.classList.toggle('hidden');
+  document.getElementById('teacher-toggle-student-icon').textContent = isOpen ? '▼ เปิด' : '▲ ปิด';
+};
+document.getElementById('teacher-student-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('teacher-student-msg');
+  const prefix = document.getElementById('teacher-student-prefix').value;
+  const rawName = document.getElementById('teacher-student-name').value.trim();
+  const phone = document.getElementById('teacher-student-phone').value.trim();
+  const name = [prefix, rawName].filter(Boolean).join(' ');
+  if (!prefix || !rawName || !phone) {
+    msg.innerHTML = '<span class="text-red-500">กรุณากรอกข้อมูลให้ครบ</span>';
+    return;
+  }
+  msg.textContent = 'กำลังบันทึก...';
+  try {
+    const existing = await getDocs(query(collection(db, COL.PARTICIPANTS), where('phone','==',phone)));
+    if (!existing.empty) {
+      msg.innerHTML = '<span class="text-amber-600">เบอร์นี้ลงทะเบียนไว้แล้ว</span>';
+      return;
+    }
+    await addDoc(collection(db, COL.PARTICIPANTS), {
+      name, phone, school: teacherSchool, note: '', registeredBy: 'teacher:' + teacherPhone,
+      createdAt: serverTimestamp()
+    });
+    msg.innerHTML = '<span class="text-teal-600">ลงทะเบียนนักเรียนสำเร็จ</span>';
+    document.getElementById('teacher-student-form').reset();
+  } catch (err) {
+    msg.innerHTML = '<span class="text-red-500">บันทึกไม่สำเร็จ: ' + (err.message || err.code) + '</span>';
+  }
+};
+`;
+  page = page.replace('document.getElementById(\'search-student\').oninput=renderStudents;', registrationScript + '\ndocument.getElementById(\'search-student\').oninput=renderStudents;');
+  return page;
+}
+function addCheckinSuccessRedirect(page, key) {
+  if (key !== 'checkin') return page;
+  const successCode = `
+    cmsg.innerHTML = '<span class="text-teal-600 font-semibold">🎉 บันทึกสำเร็จ! กำลังเปิดหน้าผู้ใช้งาน...</span>';
+    document.getElementById('profile-msg').innerHTML = '<span class="text-teal-600">ขอรับจากฐานนี้สำเร็จแล้ว</span>';
+    localStorage.setItem('art2569_user_phone', currentParticipant.phone);
+    localStorage.setItem('art2569_user_id', currentParticipant.id);
+    setTimeout(() => {
+      if (parent !== window) {
+        parent.location.hash = 'user?phone=' + encodeURIComponent(currentParticipant.phone);
+      } else {
+        location.hash = 'user?phone=' + encodeURIComponent(currentParticipant.phone);
+      }
+    }, 700);`;
+  page = page.replace(
+    `    cmsg.innerHTML = '<span class="text-teal-600 font-semibold">🎉 บันทึกสำเร็จ! ระบบบันทึกการขอรับจากฐานนี้เรียบร้อยแล้ว</span>';
+    document.getElementById('profile-msg').innerHTML = '<span class="text-teal-600">ขอรับจากฐานนี้สำเร็จแล้ว</span>';`,
+    successCode
+  );
+  return page;
+}
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = rewriteStorageImagesToFirestore(decode(pages[key]), key);
+  view.srcdoc = addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
@@ -244,26 +328,6 @@ route();
       banner.alt = 'รูปภาพหน้าจุดเวิร์คช็อป';
       banner.classList.remove('hidden');
     }
-
-    // ให้เจ้าหน้าที่ลงทะเบียนแทนนักเรียนได้ทันทีจากหน้า "สแกนกิจกรรม"
-    // โดยไม่ต้องกดเปิดฟอร์มที่ถูกพับไว้ และวางไว้ก่อนช่องค้นหา
-    const formWrap = doc.getElementById('staff-student-form-wrap');
-    const searchInput = doc.getElementById('behalf-search');
-    if (!formWrap || !searchInput || formWrap.dataset.homeVisible === 'true') return;
-    const formCard = formWrap.closest('.card');
-    const searchCard = searchInput.closest('.card');
-    if (!formCard || !searchCard) return;
-
-    const toggle = doc.getElementById('toggle-student-form');
-    if (toggle) {
-      const heading = doc.createElement('p');
-      heading.className = 'font-semibold text-sm mb-2';
-      heading.textContent = 'ลงทะเบียนนักเรียน / ผู้เข้าร่วม';
-      toggle.replaceWith(heading);
-    }
-    formWrap.classList.remove('hidden');
-    searchCard.parentNode.insertBefore(formCard, searchCard);
-    formWrap.dataset.homeVisible = 'true';
   }
 
   function enhanceCertificate(doc) {
