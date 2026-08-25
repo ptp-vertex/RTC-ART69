@@ -244,7 +244,7 @@ document.getElementById('teacher-student-form').onsubmit = async (e) => {
   const prefix = document.getElementById('teacher-student-prefix').value;
   const rawName = document.getElementById('teacher-student-name').value.trim();
   const phone = document.getElementById('teacher-student-phone').value.trim();
-  const name = [prefix, rawName].filter(Boolean).join(' ');
+  const name = [prefix, rawName].filter(Boolean).join('');
   if (!prefix || !rawName || !phone) {
     msg.innerHTML = '<span class="text-red-500">กรุณากรอกข้อมูลให้ครบ</span>';
     return;
@@ -323,7 +323,7 @@ if (teacherRegisterForm) {
     const rawName = document.getElementById('stc-name').value.trim();
     const prefix = document.getElementById('stc-prefix').value;
     const prefixOther = document.getElementById('stc-prefix-other').value.trim();
-    const name = [prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName].filter(Boolean).join(' ');
+    const name = [prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName].filter(Boolean).join('');
     const phone = document.getElementById('stc-email').value.trim();
     const password = document.getElementById('stc-password').value;
     const school = document.getElementById('stc-school').value.trim();
@@ -1023,6 +1023,12 @@ function addStatusColumnToApproved(page, key) {
     `let currentGroup = '';   // ค่าที่เลือกใน group-select เมื่อ view = point/school
 let teacherPhones = new Set();
 function normalizePhone(value) { return String(value || '').replace(/\\D/g, '').replace(/^0+/, ''); }
+function compactPrefixName(value) {
+  const s = String(value || '').replace(/\\s+/g, ' ').trim();
+  const prefixes = ['ผู้ช่วยศาสตราจารย์','รองศาสตราจารย์','ศาสตราจารย์','อาจารย์','เด็กชาย','เด็กหญิง','นางสาว','บาทหลวง','หม่อมราชวงศ์','หม่อมหลวง','แม่ชี','นาย','นาง','คุณ','พระ','ด.ช.','ดช','ด.ญ.','ดญ','น.ส.','นส','ผศ.','ผศ','รศ.','รศ','ศ.ดร.','ศดร','ศ.','ศ','ดร.','ดร','ม.ร.ว.','มรช','ม.ล.','มล','ม.จ.','มจ','Mr.','Mrs.','Ms.','Miss','Dr.','Prof.'];
+  const prefix = prefixes.find(p => s.startsWith(p + ' '));
+  return prefix ? prefix + s.slice(prefix.length + 1) : s;
+}
 function recipientStatus(row) {
   if (row.recipientType === 'teacher') return 'ครู';
   if (row.recipientType === 'student') return 'นักเรียน';
@@ -1037,14 +1043,22 @@ async function loadTeacherDirectory() {
   );
   page = page.replace(
     "const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ'];",
-    "const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ', 'สถานะ'];"
+    "const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'สถานะ', 'วันที่อนุมัติ'];"
   );
   page = page.replace(
     `fmtDate(r.approvedAt)
   ];`,
-    `fmtDate(r.approvedAt),
-    recipientStatus(r)
+    `recipientStatus(r),
+    fmtDate(r.approvedAt)
   ];`
+  );
+  page = page.replace(
+    "const toRow = (r) => [\\n    r.participantName || '',",
+    "const toRow = (r) => [\\n    compactPrefixName(r.participantName || ''),"
+  );
+  page = page.replace(
+    "<p class=\"font-semibold text-sm truncate\">${r.participantName || '-'} <span",
+    "<p class=\"font-semibold text-sm truncate\">${compactPrefixName(r.participantName || '-')} <span"
   );
   page = page.replace(
     `await loadCertLink();
@@ -1296,7 +1310,7 @@ function addCheckinPrefixPicker(page, key) {
   page = page.replace(oldSelect, newSelect);
   page = page.replace(
     "  const prefix = document.getElementById('qprefix').value;\n  const name = document.getElementById('qname').value.trim();",
-    "  const prefix = document.getElementById('qprefix').value;\n  const prefixOther = document.getElementById('qprefix-other').value.trim();\n  const rawName = document.getElementById('qname').value.trim();\n  const name = [prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName].filter(Boolean).join(' ');"
+    "  const prefix = document.getElementById('qprefix').value;\n  const prefixOther = document.getElementById('qprefix-other').value.trim();\n  const rawName = document.getElementById('qname').value.trim();\n  const name = [prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName].filter(Boolean).join('');"
   );
   page = page.replace(
     "  if(!prefix || !name || !school){ msg.innerHTML = '<span class=\"text-red-500\">กรุณากรอกข้อมูลให้ครบ</span>'; return; }",
@@ -1361,6 +1375,55 @@ function addMobileZoomLock(page, key) {
   return page;
 }
 
+function removeUserScanButton(page, key) {
+  if (key !== 'user') return page;
+  page = page.replace(/\s*<button id="user-scan-open"[\s\S]*?<\/button>/i, '');
+  page = page.replace(
+    "document.getElementById('user-scan-open').onclick = () => startUserScanner();",
+    "const userScanOpen = document.getElementById('user-scan-open'); if (userScanOpen) userScanOpen.onclick = () => startUserScanner();"
+  );
+  page = page.replace('ยังไม่มีคำขอเกียรติบัตร — สแกน QR ที่จุดเวิร์คช็อปเพื่อขอรับ', 'ยังไม่มีคำขอเกียรติบัตร');
+  return page;
+}
+
+function replaceEmojiWithIcons(page) {
+  const css = `<style id="art2569-icon-style">.ui-icon{display:inline-block;width:1.05em;height:1.05em;vertical-align:-.16em;flex:0 0 auto;color:currentColor}.ui-icon svg{display:block;width:100%;height:100%;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}</style>`;
+  if (!page.includes('art2569-icon-style')) page = page.replace('</head>', css + '</head>');
+  page = page.replaceAll("h.textContent=reg?'🧑‍💼 เจ้าหน้าที่จุดลงทะเบียน':'🧰 เจ้าหน้าที่จุดเวิร์คช็อป'", "h.textContent=reg?'เจ้าหน้าที่จุดลงทะเบียน':'เจ้าหน้าที่จุดเวิร์คช็อป'");
+  page = page.replaceAll("textContent = '📞 '+teacherPhone", "textContent = 'โทรศัพท์: '+teacherPhone");
+  page = page.replaceAll("msg.textContent = 'บันทึกแล้ว ✅'", "msg.textContent = 'บันทึกแล้ว'");
+  page = page.replaceAll("status.textContent = 'แสดงตัวอย่างแล้ว ✅ รูปจะถูกอัปโหลดพร้อมบันทึกจุดนี้'", "status.textContent = 'แสดงตัวอย่างแล้ว รูปจะถูกอัปโหลดพร้อมบันทึกจุดนี้'");
+  page = page.replaceAll('placeholder="🔍 ', 'placeholder="');
+  const paths = {
+    party:'<path d="M4 20 15.5 8.5M4 20l6.5-1.5L19 10l-5-5-8.5 8.5L4 20Z"/><path d="m14 5 1-3m3 5 3-1m-1 5 3 1M7 7 5 5"/>',
+    teacher:'<circle cx="12" cy="7" r="3"/><path d="M5 21a7 7 0 0 1 14 0M9 13h6"/>',
+    student:'<path d="m3 9 9-5 9 5-9 5-9-5Z"/><path d="M7 11v5c2 2 8 2 10 0v-5M21 10v6"/>',
+    search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',
+    check:'<path d="m5 12 4 4L19 6"/>',
+    medal:'<circle cx="12" cy="8" r="5"/><path d="m8.5 12.5-1 8 4.5-2 4.5 2-1-8M9 3l-2-2m8 2 2-2"/>',
+    camera:'<path d="M4 7h3l1.5-2h7L17 7h3v11H4V7Z"/><circle cx="12" cy="12.5" r="3.5"/>',
+    announce:'<path d="M4 11v2h3l7 4V7l-7 4H4Z"/><path d="M18 9a4 4 0 0 1 0 6M7 13l1 5"/>',
+    bulb:'<path d="M9 18h6M10 21h4M8.5 14.5a6 6 0 1 1 7 0c-.9.7-1.5 1.5-1.5 2.5h-4c0-1-.6-1.8-1.5-2.5Z"/>',
+    star:'<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9L12 3Z"/>',
+    sparkle:'<path d="m12 3 1.2 5.8L19 10l-5.8 1.2L12 17l-1.2-5.8L5 10l5.8-1.2L12 3ZM19 16l.6 2.4L22 19l-2.4.6L19 22l-.6-2.4L16 19l2.4-.6L19 16Z"/>',
+    tools:'<path d="m14.7 6.3 3-3a4 4 0 0 0-5 5L4 17a2.8 2.8 0 1 0 4 4l8.7-8.7a4 4 0 0 0 5-5l-3 3-2.5-.5-.5-2.5Z"/>',
+    settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.4 1.4-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21h-2v-.4a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L9 18l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H7v-2h.4a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L8.6 10 10 8.6l.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.6V7h2v.4a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.4 1.4-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.4v2h-.4a1.7 1.7 0 0 0-1.2.5Z"/>',
+    pin:'<path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/>',
+    clipboard:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M8 9h8M8 13h8M8 17h5"/>',
+    close:'<path d="m6 6 12 12M18 6 6 18"/>',
+    hourglass:'<path d="M6 3h12M6 21h12M8 3c0 4 4 5 4 6s-4 2-4 6m8-12c0 4-4 5-4 6s4 2 4 6"/>',
+    download:'<path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/>',
+    phone:'<path d="M6 3h3l2 5-2 2a12 12 0 0 0 5 5l2-2 5 2v3c0 1-1 2-2 2C10 20 4 14 4 5c0-1 1-2 2-2Z"/>',
+    printer:'<path d="M6 9V3h12v6M6 17H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M6 14h12v7H6v-7Z"/>',
+    toolbox:'<path d="M3 9h18v11H3V9ZM8 9V6h8v3M2 13h20M10 13v2h4v-2"/>',
+    building:'<path d="M4 21V4l8-2 8 2v17M8 8h1m6 0h1M8 12h1m6 0h1M8 16h1m6 0h1M10 21v-4h4v4"/>',
+    briefcase:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5h8v2M3 12h18M10 12v2h4v-2"/>'
+  };
+  const icons = {'🎉':'party','🧑‍💼':'teacher','🧑‍🏫':'teacher','👩‍🏫':'teacher','🧑‍🎓':'student','🎓':'student','🔍':'search','✅':'check','🎖️':'medal','🎖':'medal','📷':'camera','📢':'announce','💡':'bulb','★':'star','✦':'sparkle','🛠️':'tools','🛠':'tools','⚙':'settings','📍':'pin','📋':'clipboard','❌':'close','⏳':'hourglass','⬇':'download','📞':'phone','🖨':'printer','🧰':'toolbox','🏫':'building','💼':'briefcase','✓':'check'};
+  Object.keys(icons).sort((a,b)=>b.length-a.length).forEach(token => { const name=icons[token]; const icon=`<span class="ui-icon" data-icon="${name}" aria-hidden="true"><svg viewBox="0 0 24 24">${paths[name]}</svg></span>`; page=page.replaceAll(token, icon); });
+  return page;
+}
+
 function addNamePrefixValidation(page, key) {
   const formConfigs = [
     { form:'register-form', name:'reg-name', prefix:'reg-prefix', other:'reg-prefix-other', message:'register-result' },
@@ -1416,7 +1479,7 @@ function addNamePrefixValidation(page, key) {
         event.stopImmediatePropagation();
         nameEl.classList.add('border-red-500');
         const box = errorBox(form, cfg);
-        box.innerHTML = '<span class="text-red-500">กรุณากรอกชื่อและนามสกุลโดยเว้นวรรค 1 ครั้งตรงกลาง เช่น ปฏิภาณ บำเรอจิต หรือ ปฏิภาณ ณ อยุธยา</span>';
+        box.innerHTML = '<span class="text-red-500">กรุณากรอกชื่อและนามสกุลโดยเว้นวรรค 1 ครั้งตรงกลาง เช่น สมชาย ศิลปกรรม หรือ สมชาย ณ ศิลปกรรม</span>';
         return false;
       }
       if (raw.trim() && duplicatedPrefix(raw)) {
@@ -1475,7 +1538,7 @@ function addNamePrefixValidation(page, key) {
       const raw = String(nameEl.value || '');
       if(raw.trim() && !validFullNameShape(raw)){
         event.preventDefault(); event.stopImmediatePropagation(); nameEl.classList.add('border-red-500');
-        getMessage().innerHTML='<span class="text-red-500">กรุณากรอกชื่อและนามสกุลโดยเว้นวรรค 1 ครั้งตรงกลาง เช่น ปฏิภาณ บำเรอจิต หรือ ปฏิภาณ ณ อยุธยา</span>';
+        getMessage().innerHTML='<span class="text-red-500">กรุณากรอกชื่อและนามสกุลโดยเว้นวรรค 1 ครั้งตรงกลาง เช่น สมชาย ศิลปกรรม หรือ สมชาย ณ ศิลปกรรม</span>';
         return false;
       }
       if(raw.trim() && duplicatedPrefix(raw)){
@@ -1683,6 +1746,8 @@ function route() {
   routedPage = addStudentTeacherCertificatePopup(routedPage, key);
   routedPage = addPointCertificateImage(routedPage, key);
   routedPage = addNamePrefixValidation(routedPage, key);
+  routedPage = removeUserScanButton(routedPage, key);
+  routedPage = replaceEmojiWithIcons(routedPage);
   view.srcdoc = routedPage;
   document.title = `ART2569 — ${key === 'teacherregister' ? 'ลงทะเบียนครู' : key}`;
 }
@@ -1787,7 +1852,7 @@ route();
         try { const EventCtor = doc.defaultView.CustomEvent || CustomEvent; doc.defaultView.dispatchEvent(new EventCtor('art2569-certificate-banner-updated', { detail: dataUrl })); } catch (_) {}
         setPreview(doc, preview, dataUrl, status);
         remove.classList.remove('hidden');
-        status.textContent = 'บันทึกตัวอย่างแล้ว ✅';
+        status.textContent = 'บันทึกตัวอย่างแล้ว';
       } catch (_) {
         status.textContent = 'อัปโหลดไม่สำเร็จ ลองใช้รูปอื่น';
       } finally {
@@ -1824,7 +1889,7 @@ route();
         localStorage.setItem(STORAGE.workshop, dataUrl);
         setPreview(doc, preview, dataUrl, status);
         if (remove) remove.classList.remove('hidden');
-        if (status) status.textContent = 'บันทึกตัวอย่างแล้ว ✅';
+        if (status) status.textContent = 'บันทึกตัวอย่างแล้ว';
       } catch (_) {
         if (status) status.textContent = 'อัปโหลดไม่สำเร็จ ลองใช้รูปอื่น';
       } finally {
