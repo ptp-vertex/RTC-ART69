@@ -232,39 +232,61 @@ function fixTeacherQrPointParsing(page, key) {
     `function extractPoint(raw){
   try {
     const u = new URL(raw, location.href);
-    const direct = u.searchParams.get('point') || u.searchParams.get('p');
+    const direct = u.searchParams.get('point') || u.searchParams.get('p') ||
+      u.searchParams.get('pointCode') || u.searchParams.get('code');
     if (direct) return direct;
     const hashQuery = (u.hash || '').split('?')[1] || '';
     const hashParams = new URLSearchParams(hashQuery);
-    return hashParams.get('point') || hashParams.get('p') || '';
+    return hashParams.get('point') || hashParams.get('p') ||
+      hashParams.get('pointCode') || hashParams.get('code') || '';
   } catch (_) { return ''; }
 }
-async function resolveTeacherPointCode(raw){
-  const direct = extractPoint(raw);
-  if (direct) return direct;
+async function resolveTeacherQrLink(raw){
+  const original = String(raw || '').trim();
+  if (!original) return { url: '', pointCode: '' };
   let target;
-  try { target = new URL(String(raw || '').trim(), location.href); } catch (_) { return ''; }
-  if (!/^https?:$/.test(target.protocol)) return '';
+  try { target = new URL(original, location.href); } catch (_) { return { url: '', pointCode: '' }; }
+  const direct = extractPoint(target.href);
+  if (direct) return { url: target.href, pointCode: decodeURIComponent(direct) };
+  let resolvedUrl = target.href;
   try {
-    // Follow the Dynamic QR redirect without navigating away from the teacher page.
+    // เปิดลิงก์ Dynamic QR เพื่อให้บริการ redirect ไปยังลิงก์ปลายทางจริง
+    // แล้วจำลิงก์นั้นไว้ แทนการถือว่า payload ใน QR เป็นรหัสจุดเสมอ
     const response = await fetch(target.href, { redirect: 'follow', cache: 'no-store' });
-    const finalCode = extractPoint(response.url);
-    if (finalCode) return finalCode;
+    resolvedUrl = response.url || resolvedUrl;
+    const finalCode = extractPoint(resolvedUrl);
+    if (finalCode) {
+      localStorage.setItem('art2569_teacher_last_qr_link', resolvedUrl);
+      return { url: resolvedUrl, pointCode: decodeURIComponent(finalCode) };
+    }
+    const html = await response.text();
+    const matches = html.match(/https?:[^"'&<>\\s]+/g) || [];
+    for (const candidate of matches) {
+      const nested = candidate.replace(/&amp;/g, '&');
+      const nestedCode = extractPoint(nested);
+      if (nestedCode) {
+        localStorage.setItem('art2569_teacher_last_qr_link', nested);
+        return { url: nested, pointCode: decodeURIComponent(nestedCode) };
+      }
+    }
   } catch (_) {}
-  // รองรับลิงก์ Dynamic QR ที่ส่ง URL ปลายทางมาในพารามิเตอร์
+  // รองรับลิงก์ Dynamic QR ที่ครอบลิงก์ปลายทางไว้ในพารามิเตอร์
   for (const key of ['url','u','redirect','redirect_url','link','target']) {
     const nested = target.searchParams.get(key);
     if (nested) {
       const nestedCode = extractPoint(nested);
-      if (nestedCode) return nestedCode;
+      if (nestedCode) {
+        localStorage.setItem('art2569_teacher_last_qr_link', nested);
+        return { url: nested, pointCode: decodeURIComponent(nestedCode) };
+      }
     }
   }
-  return '';
+  return { url: resolvedUrl, pointCode: '' };
 }`
   );
   page = page.replace(
     `const pointCode=extractPoint(raw); if(!pointCode)throw new Error('ไม่พบรหัสจุดใน QR');`,
-    `const pointCode=await resolveTeacherPointCode(raw); if(!pointCode)throw new Error('ไม่พบจุด QR หรือไม่สามารถเปิดลิงก์ Dynamic QR ได้');`
+    `const qrLink=await resolveTeacherQrLink(raw); const pointCode=qrLink.pointCode; if(!pointCode)throw new Error('เปิดลิงก์ Dynamic QR ไม่สำเร็จ หรือไม่พบลิงก์กิจกรรมปลายทาง');`
   );
   return page;
 }
