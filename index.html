@@ -620,6 +620,36 @@ function forceCheckinAutoApproveFields(page, key) {
   return page;
 }
 
+function addBulkWorkshopAvailability(page, key) {
+  if (key === 'admin') {
+    const control = `<div id="bulk-workshop-availability" class="card p-4 space-y-2 border-2 border-slate-900 bg-sky-50"><div class="flex items-center justify-between gap-3"><div><p class="font-semibold text-sm">เปิด–ปิดจุดเวิร์คช็อปทั้งหมด</p><p class="text-[11px] text-slate-500">กดครั้งเดียวเพื่อเปลี่ยนสถานะทุกจุดพร้อมกัน</p></div><label class="flex items-center gap-2 text-xs font-semibold whitespace-nowrap"><input id="s-allPointsEnabled" type="checkbox" class="w-5 h-5" checked> เปิดใช้งานทุกจุด</label></div><label class="text-xs text-slate-500 block">เหตุผลเมื่อปิดจุดเวิร์คช็อปทั้งหมด</label><textarea id="s-allPointsClosedReason" rows="2" placeholder="เช่น ปิดจุดเวิร์คช็อปชั่วคราวเพื่อเตรียมกิจกรรม" class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm"></textarea><button id="btn-save-all-points-status" type="button" class="btn bg-sky-300 w-full py-2 text-sm font-semibold">บันทึกสถานะทุกจุด</button><p id="all-points-status-msg" class="text-xs text-teal-600"></p></div>`;
+    page = page.replace('</form>\n      </div>\n      <div id="points-list"', '</form>\n      </div>\n' + control + '\n      <div id="points-list"');
+    page = page.replace("document.getElementById('s-pointsCanRegister').checked = !!s.pointsCanRegisterEnabled;", "document.getElementById('s-pointsCanRegister').checked = !!s.pointsCanRegisterEnabled;\n  const allPointToggle = document.getElementById('s-allPointsEnabled'); if (allPointToggle) allPointToggle.checked = s.allPointsEnabled !== false;\n  const allPointReason = document.getElementById('s-allPointsClosedReason'); if (allPointReason) allPointReason.value = s.allPointsClosedReason || '';");
+    const bulkCode = `\ndocument.getElementById('btn-save-all-points-status').onclick = async () => { const btn = document.getElementById('btn-save-all-points-status'); const msg = document.getElementById('all-points-status-msg'); const enabled = document.getElementById('s-allPointsEnabled').checked; const reason = document.getElementById('s-allPointsClosedReason').value.trim(); btn.disabled = true; msg.textContent = 'กำลังบันทึกสถานะทุกจุด...'; try { await Promise.all(allPoints.map(p => updateDoc(doc(db, COL.POINTS, p.id), { active: enabled }))); await setDoc(doc(db, COL.SETTINGS, 'main'), { allPointsEnabled: enabled, allPointsClosedReason: reason }, { merge: true }); msg.textContent = enabled ? 'เปิดใช้งานทุกจุดแล้ว' : 'ปิดใช้งานทุกจุดแล้ว'; setTimeout(() => { msg.textContent = ''; }, 2500); } catch (err) { console.error('bulk point status error', err); msg.textContent = 'บันทึกไม่สำเร็จ: ' + (err.message || err.code); } finally { btn.disabled = false; } };\n`;
+    page = page.replace("function watchPoints(){", bulkCode + "\nfunction watchPoints(){");
+    return page;
+  }
+  return page;
+}
+
+function addSystemAvailabilityControls(page, key) {
+  if (key === 'admin') {
+    const control = `<div id="system-availability-control" class="border-2 border-slate-900 rounded-xl p-3 bg-amber-50 space-y-2"><div class="flex items-center justify-between gap-3"><div><p class="text-sm font-semibold">สถานะการเปิดใช้งานระบบ</p><p class="text-[11px] text-slate-500">ปิดเพื่อหยุดการลงทะเบียนและการขอรับเกียรติบัตรชั่วคราว</p></div><label class="flex items-center gap-2 text-xs font-semibold whitespace-nowrap"><input id="s-systemEnabled" type="checkbox" class="w-5 h-5" checked> เปิดระบบ</label></div><label class="text-xs text-slate-500 block">เหตุผลเมื่อปิดระบบ</label><textarea id="s-systemClosedReason" rows="2" placeholder="เช่น ปิดปรับปรุงระบบชั่วคราว กรุณากลับมาใหม่ภายหลัง" class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm"></textarea></div>`;
+    page = page.replace('<p class="font-semibold text-sm">ตั้งค่าระบบ</p>', '<p class="font-semibold text-sm">ตั้งค่าระบบ</p>\n' + control);
+    page = page.replace("document.getElementById('s-pointsCanRegister').checked = !!s.pointsCanRegisterEnabled;", "document.getElementById('s-pointsCanRegister').checked = !!s.pointsCanRegisterEnabled;\n  document.getElementById('s-systemEnabled').checked = s.systemEnabled !== false;\n  document.getElementById('s-systemClosedReason').value = s.systemClosedReason || '';");
+    page = page.replace("pointsCanRegisterEnabled: document.getElementById('s-pointsCanRegister').checked,", "pointsCanRegisterEnabled: document.getElementById('s-pointsCanRegister').checked,\n      systemEnabled: document.getElementById('s-systemEnabled').checked,\n      systemClosedReason: document.getElementById('s-systemClosedReason').value.trim(),");
+    return page;
+  }
+  const importMatch = page.match(/import\\s*\\{[^}]*getSiteSettings[^}]*\\}\\s*from\\s*['\"]([^'\"]+)['\"]/s);
+  if (!importMatch) return page;
+  const moduleUrl = importMatch[1];
+  const gateStyle = `<style id="art2569-system-gate-style">body[data-art2569-system-off="1"] > *:not(#art2569-system-gate){display:none!important}#art2569-system-gate{display:none;min-height:100vh;box-sizing:border-box;padding:24px 16px;align-items:center;justify-content:center;background:#fdf2f8;font-family:inherit;color:#1e293b}body[data-art2569-system-off="1"] #art2569-system-gate{display:flex}</style>`;
+  const gateScript = `<script type="module">import { getSiteSettings } from '${moduleUrl}';\n(async()=>{try{const s=await getSiteSettings();if(s.systemEnabled===false){const gate=document.createElement('div');gate.id='art2569-system-gate';gate.innerHTML='<div style="width:min(100%,420px);background:#fff;border:2px solid #0f172a;border-radius:20px;box-shadow:6px 6px 0 rgba(15,23,42,.9);padding:24px;text-align:center"><div style="width:52px;height:52px;margin:0 auto 12px;border-radius:50%;background:#fbbf24;border:2px solid #0f172a;display:flex;align-items:center;justify-content:center;font-size:25px">!</div><h1 style="font-size:20px;font-weight:700;margin:0 0 8px">ระบบปิดให้บริการชั่วคราว</h1><p style="font-size:13px;color:#64748b;margin:0 0 12px">'+(s.systemClosedReason||'ขณะนี้ระบบปิดให้บริการชั่วคราว กรุณากลับมาใหม่ภายหลัง')+'</p><p style="font-size:11px;color:#94a3b8;margin:0">ขออภัยในความไม่สะดวก</p></div>';document.body.appendChild(gate);document.body.setAttribute('data-art2569-system-off','1');}}catch(_){}})();<\/script>`;
+  page = page.replace('</head>', gateStyle + '</head>');
+  page = page.replace('</body>', gateScript + '</body>');
+  return page;
+}
+
 function addTeacherPhoneGuard(page, key) {
   if (key !== 'checkin') return page;
   page = page.replace(
@@ -1822,6 +1852,8 @@ function route() {
   routedPage = addTeacherHomeRegistrationLink(routedPage, key);
   routedPage = addTeacherRegistrationPage(routedPage, key);
   routedPage = addTeacherPhoneGuard(routedPage, key);
+  routedPage = addBulkWorkshopAvailability(routedPage, key);
+  routedPage = addSystemAvailabilityControls(routedPage, key);
   routedPage = fixTeacherLogout(routedPage, key);
   routedPage = addSchoolDirectoryAssist(routedPage, key);
   routedPage = addCheckinPrefixPicker(routedPage, key);
