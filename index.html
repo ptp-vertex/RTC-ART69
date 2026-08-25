@@ -1765,6 +1765,34 @@ import { db, COL, collection, getDocs } from '${moduleUrl}';
   return page.replace('</body>', schoolScript + '</body>');
 }
 
+let stableViewHeightTimer = null;
+function syncStableViewHeight(reset = false) {
+  if (!view) return;
+  const viewportHeight = Math.max(1, Math.ceil(window.innerHeight || document.documentElement.clientHeight || 1));
+  if (reset || !view.style.height) view.style.height = viewportHeight + 'px';
+  clearTimeout(stableViewHeightTimer);
+  stableViewHeightTimer = setTimeout(() => {
+    const doc = view.contentDocument;
+    if (!doc || !doc.documentElement || !doc.body) return;
+    const contentHeight = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight, doc.documentElement.offsetHeight, doc.body.offsetHeight);
+    const currentHeight = Math.max(view.clientHeight || 0, parseFloat(view.style.height) || 0, viewportHeight);
+    const targetHeight = Math.max(viewportHeight, contentHeight);
+    if (Math.abs(targetHeight - currentHeight) > 1) {
+      const previousScrollY = window.scrollY;
+      view.style.height = targetHeight + 'px';
+      requestAnimationFrame(() => {
+        if (Math.abs(window.scrollY - previousScrollY) > 8) window.scrollTo(0, previousScrollY);
+      });
+    }
+    if (!doc.__art2569StableHeightObserver && typeof MutationObserver !== 'undefined') {
+      const schedule = () => { clearTimeout(stableViewHeightTimer); stableViewHeightTimer = setTimeout(() => syncStableViewHeight(false), 80); };
+      const observer = new MutationObserver(schedule);
+      observer.observe(doc.body, { childList:true, subtree:true });
+      doc.__art2569StableHeightObserver = observer;
+    }
+  }, 80);
+}
+
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
@@ -1806,6 +1834,8 @@ function route() {
   view.srcdoc = routedPage;
   document.title = `ART2569 — ${key === 'teacherregister' ? 'ลงทะเบียนครู' : key}`;
 }
+view.addEventListener('load', () => syncStableViewHeight(true));
+window.addEventListener('resize', () => syncStableViewHeight(false), { passive:true });
 window.addEventListener('hashchange', route);
 route();
 
