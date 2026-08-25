@@ -1,3 +1,6 @@
+
+
+
 <!doctype html>
 <html lang="th">
 <head>
@@ -170,24 +173,33 @@ function addTeacherPhoneGuard(page, key) {
     'import { auth, db, COL, phoneKey, ensureAnonymous,'
   );
 
-  // --- แทรกส่วนเลือก "เกียรติบัตรนักเรียน / เกียรติบัตรครู" สำหรับเบอร์ครู ---
+  // --- แยกเมนูเกียรติบัตรนักเรียนและเกียรติบัตรครูเป็นคนละหน้า สำหรับเบอร์ครู ---
   const teacherSelectMarkup = `
-  <div id="teacher-select-box" class="hidden space-y-4">
-    <div class="card p-5">
-      <p class="text-sm font-semibold mb-1">🎓 เกียรติบัตรนักเรียน</p>
-      <p class="text-xs text-slate-400 mb-3">เลือกนักเรียนที่ต้องการขอรับเกียรติบัตรจากฐานนี้ (เลือกได้สูงสุด 5 คน)</p>
-      <input id="teacher-student-search" placeholder="🔍 ค้นหาชื่อนักเรียน..." class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm mb-2">
-      <div id="teacher-student-pick-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
-      <button id="teacher-student-submit" type="button" class="btn bg-pink-500 text-white w-full py-2.5 text-sm font-semibold mt-3">✅ ขอรับให้นักเรียนที่เลือก</button>
-      <p id="teacher-student-select-msg" class="text-xs mt-2"></p>
+  <div id="teacher-select-box" class="hidden">
+    <nav id="teacher-top-nav" class="card p-2 mb-4 grid grid-cols-3 gap-2 sticky top-2 z-10" aria-label="เมนูสำหรับครู">
+      <button id="teacher-nav-dashboard" type="button" data-teacher-nav="teacher" class="btn bg-white py-2 px-2 text-xs font-semibold">👩‍🏫 หน้าครู</button>
+      <button id="teacher-nav-students" type="button" data-teacher-nav="students" class="btn bg-pink-500 text-white py-2 px-2 text-xs font-semibold">🎓 เกียรติบัตรนักเรียน</button>
+      <button id="teacher-nav-self" type="button" data-teacher-nav="teacher-cert" class="btn bg-white py-2 px-2 text-xs font-semibold">🧑‍🏫 เกียรติบัตรครู</button>
+    </nav>
+    <div id="teacher-student-page" class="hidden">
+      <div class="card p-5">
+        <p class="text-sm font-semibold mb-1">🎓 เกียรติบัตรนักเรียน</p>
+        <p class="text-xs text-slate-400 mb-3">เลือกนักเรียนที่ต้องการขอรับเกียรติบัตรจากฐานนี้ (เลือกได้สูงสุด 5 คน)</p>
+        <input id="teacher-student-search" placeholder="🔍 ค้นหาชื่อนักเรียน..." class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm mb-2">
+        <div id="teacher-student-pick-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+        <button id="teacher-student-submit" type="button" class="btn bg-pink-500 text-white w-full py-2.5 text-sm font-semibold mt-3">✅ ขอรับให้นักเรียนที่เลือก</button>
+        <p id="teacher-student-select-msg" class="text-xs mt-2"></p>
+      </div>
     </div>
-    <div class="card p-5">
-      <p class="text-sm font-semibold mb-1">🧑‍🏫 เกียรติบัตรครู</p>
-      <p class="text-xs text-slate-400 mb-3">ขอรับเกียรติบัตรจากฐานนี้ในนามครู <span id="teacher-select-name" class="font-semibold"></span></p>
-      <button id="teacher-self-submit" type="button" class="btn bg-teal-400 w-full py-2.5 text-sm font-semibold">🎖️ รับเกียรติบัตรครู</button>
-      <p id="teacher-self-select-msg" class="text-xs mt-2"></p>
+    <div id="teacher-certificate-page" class="hidden">
+      <div class="card p-5">
+        <p class="text-sm font-semibold mb-1">🧑‍🏫 เกียรติบัตรครู</p>
+        <p class="text-xs text-slate-400 mb-3">ขอรับเกียรติบัตรจากฐานนี้ในนามครู <span id="teacher-select-name" class="font-semibold"></span></p>
+        <button id="teacher-self-submit" type="button" class="btn bg-teal-400 w-full py-2.5 text-sm font-semibold">🎖️ รับเกียรติบัตรครู</button>
+        <p id="teacher-self-select-msg" class="text-xs mt-2"></p>
+      </div>
     </div>
-    <button id="teacher-select-change" type="button" class="text-xs underline text-slate-400 block text-center w-full">ไม่ใช่บัญชีของคุณ? เปลี่ยนเบอร์</button>
+    <button id="teacher-select-change" type="button" class="text-xs underline text-slate-400 block text-center w-full mt-4">ไม่ใช่บัญชีของคุณ? เปลี่ยนเบอร์</button>
   </div>
   `;
   page = page.replace(
@@ -199,6 +211,33 @@ function addTeacherPhoneGuard(page, key) {
     `function hideAllSteps(){ hide('login-box'); hide('register-box'); hide('profile-box'); }`,
     `function hideAllSteps(){ hide('login-box'); hide('register-box'); hide('profile-box'); hide('teacher-select-box'); }
 let teacherSelectStudents = [];
+let teacherSelectMode = 'students';
+function teacherSelectParams(){
+  try {
+    const hash = (parent !== window ? parent.location.hash : location.hash) || '';
+    return new URLSearchParams(hash.split('?')[1] || '');
+  } catch (_) { return new URLSearchParams(); }
+}
+function navigateTeacherMode(mode){
+  const params = teacherSelectParams();
+  params.set('mode', mode === 'teacher' ? 'teacher' : 'students');
+  const target = 'checkin?' + params.toString();
+  if (parent !== window) parent.location.hash = target;
+  else location.hash = target;
+}
+function setTeacherSelectMode(mode){
+  teacherSelectMode = mode === 'teacher' ? 'teacher' : 'students';
+  const studentPage = document.getElementById('teacher-student-page');
+  const teacherPage = document.getElementById('teacher-certificate-page');
+  if (studentPage) studentPage.classList.toggle('hidden', teacherSelectMode !== 'students');
+  if (teacherPage) teacherPage.classList.toggle('hidden', teacherSelectMode !== 'teacher');
+  document.querySelectorAll('[data-teacher-nav]').forEach(item => {
+    const active = item.getAttribute('data-teacher-nav') === (teacherSelectMode === 'teacher' ? 'teacher-cert' : 'students');
+    item.classList.toggle('bg-pink-500', active);
+    item.classList.toggle('text-white', active);
+    item.classList.toggle('bg-white', !active);
+  });
+}
 let teacherSelectedIds = new Set();
 let currentTeacherPhone = '', currentTeacherName = '', currentTeacherSchool = '';
 async function showTeacherSelect(staff, phone){
@@ -207,6 +246,14 @@ async function showTeacherSelect(staff, phone){
   currentTeacherName = staff.name || '';
   currentTeacherSchool = staff.school || '';
   show('teacher-select-box');
+  const requestedMode = teacherSelectParams().get('mode');
+  setTeacherSelectMode(requestedMode === 'teacher' ? 'teacher' : 'students');
+  document.getElementById('teacher-nav-dashboard').onclick = () => {
+    if (parent !== window) parent.location.hash = 'teacher';
+    else location.hash = 'teacher';
+  };
+  document.getElementById('teacher-nav-students').onclick = () => navigateTeacherMode('students');
+  document.getElementById('teacher-nav-self').onclick = () => navigateTeacherMode('teacher');
   document.getElementById('teacher-select-name').textContent = staff.name || phone;
   document.getElementById('teacher-student-select-msg').textContent = '';
   document.getElementById('teacher-self-select-msg').textContent = '';
