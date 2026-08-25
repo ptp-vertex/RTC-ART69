@@ -336,7 +336,7 @@ document.getElementById('teacher-student-submit').onclick = async () => {
     try {
       const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',student.id), where('pointId','==',pointData.id)));
       if (!dup.empty) { skip++; continue; }
-      await addDoc(collection(db, COL.REQUESTS), { participantId:student.id, participantName:student.name, participantPhone:student.phone, participantSchool:student.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null });
+      await addDoc(collection(db, COL.REQUESTS), { participantId:student.id, participantName:student.name, participantPhone:student.phone, participantSchool:student.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType:'student' });
       ok++;
     } catch(_) { skip++; }
   }
@@ -355,7 +355,7 @@ document.getElementById('teacher-self-submit').onclick = async () => {
     }
     const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',teacherParticipant.id), where('pointId','==',pointData.id)));
     if (dup.empty) {
-      await addDoc(collection(db, COL.REQUESTS), { participantId:teacherParticipant.id, participantName:teacherParticipant.name, participantPhone:teacherParticipant.phone, participantSchool:teacherParticipant.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null });
+      await addDoc(collection(db, COL.REQUESTS), { participantId:teacherParticipant.id, participantName:teacherParticipant.name, participantPhone:teacherParticipant.phone, participantSchool:teacherParticipant.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType:'teacher' });
     }
     msg.innerHTML = '<span class="text-teal-600">รับสำเร็จ! กำลังไปหน้าครู...</span>';
     localStorage.setItem('art2569_teacher_phone', currentTeacherPhone);
@@ -479,6 +479,17 @@ function fixTeacherStudentModal(page, key) {
       'class="bg-white border-2 border-slate-900 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5"'
     );
 }
+function fixTeacherDashboardSeparation(page, key) {
+  if (key !== 'teacher') return page;
+  page = page.replace(/\s*<button id="btn-recipient-self"[^>]*>[\s\S]*?<\/button>/, '');
+  page = page.replace(/\ndocument\.getElementById\('btn-recipient-self'\)\.onclick = async \(\) => \{[\s\S]*?\n\};/, '');
+  page = page.replace('สแกนสำเร็จ — เลือกผู้รับเกียรติบัตร', 'สแกนสำเร็จ — เลือกนักเรียนรับเกียรติบัตร');
+  page = page.replace('เกียรติบัตรของฉัน', 'เกียรติบัตรครู');
+  page = page.replace('สแกนกิจกรรม</button>', 'สแกนกิจกรรมนักเรียน</button>');
+  page = page.replace('สแกน QR ทันที (เลือกผู้รับทีหลัง)', 'สแกน QR กิจกรรมนักเรียน');
+  return page;
+}
+
 function fixTeacherStudentSeparation(page, key) {
   if (key !== 'teacher') return page;
   return page
@@ -512,12 +523,56 @@ function fixTeacherStudentSeparation(page, key) {
     );
 }
 
+function addStatusColumnToApproved(page, key) {
+  if (key !== 'approved') return page;
+  page = page.replace(
+    'getFirestore, collection, query, where, onSnapshot, doc, getDoc',
+    'getFirestore, collection, query, where, onSnapshot, doc, getDoc, getDocs'
+  );
+  page = page.replace(
+    "let currentGroup = '';   // ค่าที่เลือกใน group-select เมื่อ view = point/school",
+    `let currentGroup = '';   // ค่าที่เลือกใน group-select เมื่อ view = point/school
+let teacherPhones = new Set();
+function normalizePhone(value) { return String(value || '').replace(/\\D/g, '').replace(/^0+/, ''); }
+function recipientStatus(row) {
+  if (row.recipientType === 'teacher') return 'ครู';
+  if (row.recipientType === 'student') return 'นักเรียน';
+  return teacherPhones.has(normalizePhone(row.participantPhone)) ? 'ครู' : 'นักเรียน';
+}
+async function loadTeacherDirectory() {
+  try {
+    const snap = await getDocs(collection(db, 'cert_staff'));
+    teacherPhones = new Set(snap.docs.filter(d => d.data().role === 'teacher').map(d => normalizePhone(d.data().phone)));
+  } catch (_) { teacherPhones = new Set(); }
+}`
+  );
+  page = page.replace(
+    "const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ'];",
+    "const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ', 'สถานะ'];"
+  );
+  page = page.replace(
+    `fmtDate(r.approvedAt)
+  ];`,
+    `fmtDate(r.approvedAt),
+    recipientStatus(r)
+  ];`
+  );
+  page = page.replace(
+    `await loadCertLink();
+  const qy = query(collection(db, COL_REQUESTS), where('status', '==', 'approved'));`,
+    `await loadCertLink();
+  await loadTeacherDirectory();
+  const qy = query(collection(db, COL_REQUESTS), where('status', '==', 'approved'));`
+  );
+  return page;
+}
+
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = fixAdminClearActions(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key);
+  view.srcdoc = addStatusColumnToApproved(fixTeacherDashboardSeparation(fixAdminClearActions(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
