@@ -558,8 +558,21 @@ async function showTeacherSelect(staff, phone){
   teacherSelectedIds = new Set();
   teacherSelectStudents = [];
   try {
+    const digits = value => String(value || '').replace(/\D/g, '').replace(/^0+/, '');
+    const teacherPhones = new Set([digits(phone)]);
+    try {
+      const staffSnap = await getDocs(collection(db, COL.STAFF));
+      staffSnap.forEach(d => {
+        const staffRow = d.data() || {};
+        if (staffRow.role === 'teacher') teacherPhones.add(digits(staffRow.phone || d.id));
+      });
+    } catch (_) {}
     const snap = await getDocs(query(collection(db, COL.PARTICIPANTS), where('school','==', currentTeacherSchool)));
-    snap.forEach(d => teacherSelectStudents.push({ id:d.id, ...d.data() }));
+    snap.forEach(d => {
+      const row = { id:d.id, ...d.data() };
+      if (row.registeredBy === 'teacher-self' || row.note === 'ครู' || teacherPhones.has(digits(row.phone))) return;
+      teacherSelectStudents.push(row);
+    });
   } catch(_) {}
   renderTeacherStudentPickList();
 }
@@ -834,7 +847,7 @@ function fixTeacherStudentSeparation(page, key) {
   return page
     .replace(
       `async function submitRequestForParticipantAtPoint(participant, point){`,
-      `async function submitRequestForParticipantAtPoint(participant, point, recipientType='student'){`
+      `async function submitRequestForParticipantAtPoint(participant, point, recipientType=(participant && (participant.registeredBy==='teacher-self' || participant.note==='ครู') ? 'teacher' : 'student')){`
     )
     .replace(
       `approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'' });`,
@@ -1046,6 +1059,79 @@ function addPointCertificateImage(page, key) {
   return page;
 }
 
+function addStudentTeacherCertificatePopup(page, key) {
+  if (key === 'user') {
+    const directAnchor = '<a href="${certLink}" target="_blank" rel="noopener" class="block text-center btn bg-pink-500 text-white py-1.5 text-xs font-semibold">🎖️ ดูเกียรติบัตร</a>';
+    const popupButton = '<button type="button" data-user-view-cert class="block text-center btn bg-pink-500 text-white py-1.5 text-xs font-semibold">🎖️ ดูเกียรติบัตร</button>';
+    page = page.split(directAnchor).join(popupButton);
+    const overlay = '<div id="user-cert-announce-overlay" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4"><div class="bg-white border-2 border-slate-900 rounded-2xl max-w-sm w-full p-5 shadow-[6px_6px_0_rgba(15,23,42,.9)]"><p class="text-xs font-bold tracking-wide text-amber-600 mb-1">📢 ประกาศ</p><img id="user-cert-announce-image" class="hidden w-full max-h-48 object-contain rounded-xl border-2 border-slate-900 mb-3" alt="รูปประกาศ"><p id="user-cert-announce-text" class="text-sm text-slate-700 whitespace-pre-line leading-relaxed"></p><div class="flex justify-end gap-2 mt-4"><button id="user-cert-announce-cancel" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-white">ปิด</button><button id="user-cert-announce-go" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-pink-500 text-white">ไปที่เกียรติบัตร</button></div></div></div>';
+    page = page.replace('</body>', overlay + '</body>');
+    const popupCode = String.raw`
+let userCertSettings = { link: '', announce: '', style: 'compact', enabled: true };
+function openUserCertAnnounce(){
+  const link = (userCertSettings.link || certLink || '').trim();
+  if (!link) return;
+  if (userCertSettings.enabled === false) { window.open(link, '_blank', 'noopener'); return; }
+  const overlay = document.getElementById('user-cert-announce-overlay');
+  const textEl = document.getElementById('user-cert-announce-text');
+  const imageEl = document.getElementById('user-cert-announce-image');
+  const banner = localStorage.getItem('art2569_certificate_banner_preview') || '';
+  const defaultMsg = 'กรุณาตรวจสอบชื่อ-นามสกุลในเกียรติบัตรให้ถูกต้อง หากพบข้อผิดพลาดกรุณาติดต่อเจ้าหน้าที่';
+  const fullMsg = userCertSettings.announce || '';
+  const shortMsg = fullMsg ? (fullMsg.length > 90 ? fullMsg.slice(0, 90).trim() + '…' : fullMsg) : defaultMsg;
+  if (imageEl) { imageEl.src = banner; imageEl.classList.toggle('hidden', !banner); }
+  if (textEl) textEl.textContent = userCertSettings.style === 'full' ? (fullMsg || defaultMsg) : shortMsg;
+  if (overlay) overlay.classList.remove('hidden');
+}
+document.getElementById('user-cert-announce-cancel').onclick = () => document.getElementById('user-cert-announce-overlay').classList.add('hidden');
+document.getElementById('user-cert-announce-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden'); });
+document.getElementById('user-cert-announce-go').onclick = () => { const link = (userCertSettings.link || certLink || '').trim(); document.getElementById('user-cert-announce-overlay').classList.add('hidden'); if (link) window.open(link, '_blank', 'noopener'); };
+document.getElementById('history-list').addEventListener('click', e => { const btn = e.target.closest('[data-user-view-cert]'); if (btn) { e.preventDefault(); openUserCertAnnounce(); } });
+`;
+    page = page.replace("let certLink = '';", "let certLink = '';\n" + popupCode);
+    page = page.replace(
+      "certLink = s.certificateLink || '';",
+      "certLink = s.certificateLink || '';\n  userCertSettings = { link: (s.certificateLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false };"
+    );
+  }
+
+  if (key === 'teacher') {
+    const directAnchor = '<a href="${certLink}" target="_blank" rel="noopener" class="block text-center btn bg-pink-500 text-white py-1.5 text-xs font-semibold mt-2">🎖️ ดูเกียรติบัตร</a>';
+    const popupButton = '<button type="button" data-teacher-view-cert class="block text-center btn bg-pink-500 text-white py-1.5 text-xs font-semibold mt-2">🎖️ ดูเกียรติบัตร</button>';
+    page = page.split(directAnchor).join(popupButton);
+    const overlay = '<div id="teacher-cert-announce-overlay" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4"><div class="bg-white border-2 border-slate-900 rounded-2xl max-w-sm w-full p-5 shadow-[6px_6px_0_rgba(15,23,42,.9)]"><p class="text-xs font-bold tracking-wide text-amber-600 mb-1">📢 ประกาศ</p><img id="teacher-cert-announce-image" class="hidden w-full max-h-48 object-contain rounded-xl border-2 border-slate-900 mb-3" alt="รูปประกาศ"><p id="teacher-cert-announce-text" class="text-sm text-slate-700 whitespace-pre-line leading-relaxed"></p><div class="flex justify-end gap-2 mt-4"><button id="teacher-cert-announce-cancel" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-white">ปิด</button><button id="teacher-cert-announce-go" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-pink-500 text-white">ไปที่เกียรติบัตร</button></div></div></div>';
+    page = page.replace('</body>', overlay + '</body>');
+    const popupCode = String.raw`
+let teacherCertSettings = { link: '', announce: '', style: 'compact', enabled: true };
+function openTeacherCertAnnounce(){
+  const link = (teacherCertSettings.link || certLink || '').trim();
+  if (!link) return;
+  if (teacherCertSettings.enabled === false) { window.open(link, '_blank', 'noopener'); return; }
+  const overlay = document.getElementById('teacher-cert-announce-overlay');
+  const textEl = document.getElementById('teacher-cert-announce-text');
+  const imageEl = document.getElementById('teacher-cert-announce-image');
+  const banner = localStorage.getItem('art2569_certificate_banner_preview') || '';
+  const defaultMsg = 'กรุณาตรวจสอบชื่อ-นามสกุลในเกียรติบัตรให้ถูกต้อง หากพบข้อผิดพลาดกรุณาติดต่อเจ้าหน้าที่';
+  const fullMsg = teacherCertSettings.announce || '';
+  const shortMsg = fullMsg ? (fullMsg.length > 90 ? fullMsg.slice(0, 90).trim() + '…' : fullMsg) : defaultMsg;
+  if (imageEl) { imageEl.src = banner; imageEl.classList.toggle('hidden', !banner); }
+  if (textEl) textEl.textContent = teacherCertSettings.style === 'full' ? (fullMsg || defaultMsg) : shortMsg;
+  if (overlay) overlay.classList.remove('hidden');
+}
+document.getElementById('teacher-cert-announce-cancel').onclick = () => document.getElementById('teacher-cert-announce-overlay').classList.add('hidden');
+document.getElementById('teacher-cert-announce-overlay').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden'); });
+document.getElementById('teacher-cert-announce-go').onclick = () => { const link = (teacherCertSettings.link || certLink || '').trim(); document.getElementById('teacher-cert-announce-overlay').classList.add('hidden'); if (link) window.open(link, '_blank', 'noopener'); };
+document.addEventListener('click', e => { const btn = e.target.closest('[data-teacher-view-cert]'); if (btn) { e.preventDefault(); openTeacherCertAnnounce(); } });
+`;
+    page = page.replace("let certLink = '';", "let certLink = '';\n" + popupCode);
+    page = page.replace(
+      "getSiteSettings().then(s => { certLink = s.certificateLink || ''; renderTeacherSelf(); renderStudents(); });",
+      "getSiteSettings().then(s => { certLink = s.certificateLink || ''; teacherCertSettings = { link: (s.certificateLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false }; renderTeacherSelf(); renderStudents(); });"
+    );
+  }
+  return page;
+}
+
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
@@ -1071,6 +1157,7 @@ function route() {
   routedPage = addScanTokenToAdmin(routedPage, key);
   routedPage = addStatusColumnToApproved(routedPage, key);
   routedPage = addCertificateAnnouncementUI(routedPage, key);
+  routedPage = addStudentTeacherCertificatePopup(routedPage, key);
   routedPage = addPointCertificateImage(routedPage, key);
   view.srcdoc = routedPage;
   document.title = `ART2569 — ${key === 'teacherregister' ? 'ลงทะเบียนครู' : key}`;
