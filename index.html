@@ -167,24 +167,83 @@ function addTeacherPhoneGuard(page, key) {
   if (key !== 'checkin') return page;
   page = page.replace(
     'import { auth, db, COL, ensureAnonymous,',
-    'import { auth, db, COL, phoneKey, phoneAuthEmail, ensureAnonymous,'
+    'import { auth, db, COL, phoneKey, ensureAnonymous,'
   );
+
+  // --- แทรกส่วนเลือก "เกียรติบัตรนักเรียน / เกียรติบัตรครู" สำหรับเบอร์ครู ---
+  const teacherSelectMarkup = `
+  <div id="teacher-select-box" class="hidden space-y-4">
+    <div class="card p-5">
+      <p class="text-sm font-semibold mb-1">🎓 เกียรติบัตรนักเรียน</p>
+      <p class="text-xs text-slate-400 mb-3">เลือกนักเรียนที่ต้องการขอรับเกียรติบัตรจากฐานนี้ (เลือกได้สูงสุด 5 คน)</p>
+      <input id="teacher-student-search" placeholder="🔍 ค้นหาชื่อนักเรียน..." class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm mb-2">
+      <div id="teacher-student-pick-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+      <button id="teacher-student-submit" type="button" class="btn bg-pink-500 text-white w-full py-2.5 text-sm font-semibold mt-3">✅ ขอรับให้นักเรียนที่เลือก</button>
+      <p id="teacher-student-select-msg" class="text-xs mt-2"></p>
+    </div>
+    <div class="card p-5">
+      <p class="text-sm font-semibold mb-1">🧑‍🏫 เกียรติบัตรครู</p>
+      <p class="text-xs text-slate-400 mb-3">ขอรับเกียรติบัตรจากฐานนี้ในนามครู <span id="teacher-select-name" class="font-semibold"></span></p>
+      <button id="teacher-self-submit" type="button" class="btn bg-teal-400 w-full py-2.5 text-sm font-semibold">🎖️ รับเกียรติบัตรครู</button>
+      <p id="teacher-self-select-msg" class="text-xs mt-2"></p>
+    </div>
+    <button id="teacher-select-change" type="button" class="text-xs underline text-slate-400 block text-center w-full">ไม่ใช่บัญชีของคุณ? เปลี่ยนเบอร์</button>
+  </div>
+  `;
+  page = page.replace(
+    '<!-- STEP 2: เข้าสู่ระบบแล้วแต่ไม่พบบัญชี -> บังคับสมัครก่อน -->',
+    teacherSelectMarkup + '\n  <!-- STEP 2: เข้าสู่ระบบแล้วแต่ไม่พบบัญชี -> บังคับสมัครก่อน -->'
+  );
+
+  page = page.replace(
+    `function hideAllSteps(){ hide('login-box'); hide('register-box'); hide('profile-box'); }`,
+    `function hideAllSteps(){ hide('login-box'); hide('register-box'); hide('profile-box'); hide('teacher-select-box'); }
+let teacherSelectStudents = [];
+let teacherSelectedIds = new Set();
+let currentTeacherPhone = '', currentTeacherName = '', currentTeacherSchool = '';
+async function showTeacherSelect(staff, phone){
+  hideAllSteps();
+  currentTeacherPhone = phone;
+  currentTeacherName = staff.name || '';
+  currentTeacherSchool = staff.school || '';
+  show('teacher-select-box');
+  document.getElementById('teacher-select-name').textContent = staff.name || phone;
+  document.getElementById('teacher-student-select-msg').textContent = '';
+  document.getElementById('teacher-self-select-msg').textContent = '';
+  teacherSelectedIds = new Set();
+  teacherSelectStudents = [];
+  try {
+    const snap = await getDocs(query(collection(db, COL.PARTICIPANTS), where('school','==', currentTeacherSchool)));
+    snap.forEach(d => teacherSelectStudents.push({ id:d.id, ...d.data() }));
+  } catch(_) {}
+  renderTeacherStudentPickList();
+}
+function renderTeacherStudentPickList(){
+  const searchBox = document.getElementById('teacher-student-search');
+  const kw = (searchBox.value||'').trim().toLowerCase();
+  const box = document.getElementById('teacher-student-pick-list');
+  const filtered = teacherSelectStudents.filter(s => !kw || (s.name||'').toLowerCase().includes(kw));
+  if(!filtered.length){ box.innerHTML = '<p class="text-xs text-slate-400 text-center py-3">ไม่พบนักเรียน</p>'; return; }
+  box.innerHTML = filtered.map(s => '<label class="flex items-center gap-2 border-2 border-slate-900 rounded-xl px-3 py-2 text-sm cursor-pointer"><input type="checkbox" data-student="'+s.id+'" '+(teacherSelectedIds.has(s.id)?'checked':'')+' class="w-4 h-4"><span class="flex-1">'+(s.name||'-')+'</span><span class="text-xs text-slate-400">'+(s.phone||'')+'</span></label>').join('');
+  box.querySelectorAll('[data-student]').forEach(cb => cb.onchange = () => {
+    const id = cb.getAttribute('data-student');
+    if(cb.checked){
+      if(teacherSelectedIds.size >= 5){ cb.checked = false; document.getElementById('teacher-student-select-msg').innerHTML = '<span class="text-amber-600">เลือกได้สูงสุด 5 คน</span>'; return; }
+      teacherSelectedIds.add(id);
+    } else { teacherSelectedIds.delete(id); }
+  });
+  searchBox.oninput = renderTeacherStudentPickList;
+}`
+  );
+
   const guardedLogin = `
   try {
-    const staffSnap = await getDocs(query(collection(db, COL.STAFF), where('phone','==',phone)));
-    const staff = staffSnap.empty ? null : staffSnap.docs[0].data();
-    const teacherWasLoggedInBefore = staff?.role === 'teacher' && (
-      auth.currentUser?.email === phoneAuthEmail(phone) ||
-      phoneKey(localStorage.getItem('art2569_teacher_phone') || '') === phoneKey(phone)
-    );
-    if (staff?.role === 'teacher') {
-      const notice = teacherWasLoggedInBefore
-        ? 'พบเบอร์ครูและกำลังเข้าสู่ระบบครูอัตโนมัติ\\nกรุณาเลือกเมนู “สแกนกิจกรรม” แล้วสแกน QR อีกครั้ง'
-        : 'เบอร์นี้เป็นบัญชีครู\\nกรุณาเข้าสู่ระบบหน้าครูก่อน แล้วเลือก “สแกนกิจกรรม” เพื่อสแกน QR อีกครั้ง';
-      localStorage.setItem('art2569_teacher_login_notice', notice);
-      alert(notice);
-      if (parent !== window) parent.location.hash = 'teacher';
-      else location.hash = 'teacher';
+    const staffSnap = await getDoc(doc(db, COL.STAFF, phoneKey(phone)));
+    const staff = staffSnap.exists() ? staffSnap.data() : null;
+    if (staff && staff.role === 'teacher') {
+      localStorage.setItem(LS_PHONE, phone);
+      localStorage.removeItem(LS_ID);
+      await showTeacherSelect(staff, phone);
       return;
     }
     await resolveIdentity(phone);
@@ -199,28 +258,81 @@ function addTeacherPhoneGuard(page, key) {
   }`,
     guardedLogin
   );
-  return page;
-}
-function addTeacherReturnNotice(page, key) {
-  if (key !== 'teacher') return page;
-  const noticeScript = '<scr' + 'ipt>' + `
-(function showTeacherReturnNotice(){
-  const notice = localStorage.getItem('art2569_teacher_login_notice');
-  if (!notice) return;
-  const started = Date.now();
-  const waitForTeacherPage = () => {
-    const dash = document.getElementById('dash-box');
-    if ((dash && !dash.classList.contains('hidden')) || (Date.now() - started > 7000)) {
-      alert(notice);
-      localStorage.removeItem('art2569_teacher_login_notice');
-      return;
+
+  // เข้าสู่ระบบค้างไว้แล้วในเครื่องนี้ -> ตรวจสอบว่าเป็นเบอร์ครูหรือไม่ก่อนเรียก resolveIdentity เดิม
+  page = page.replace(
+    `  if(savedPhone){
+    // เข้าสู่ระบบค้างไว้แล้ว -> ตรวจสอบบัญชีทันที ไม่ต้องกรอกซ้ำ
+    await resolveIdentity(savedPhone);
+  } else {`,
+    `  if(savedPhone){
+    // เข้าสู่ระบบค้างไว้แล้ว -> ตรวจสอบบัญชีทันที ไม่ต้องกรอกซ้ำ
+    try {
+      const staffSnap = await getDoc(doc(db, COL.STAFF, phoneKey(savedPhone)));
+      const staff = staffSnap.exists() ? staffSnap.data() : null;
+      if (staff && staff.role === 'teacher') { await showTeacherSelect(staff, savedPhone); return; }
+    } catch(_) {}
+    await resolveIdentity(savedPhone);
+  } else {`
+  );
+
+  // ปุ่ม "รับให้นักเรียนที่เลือก" และ "รับเกียรติบัตรครู" + ปุ่มเปลี่ยนเบอร์
+  const teacherActionScript = `
+document.getElementById('teacher-student-submit').onclick = async () => {
+  const msg = document.getElementById('teacher-student-select-msg');
+  if(!teacherSelectedIds.size){ msg.innerHTML = '<span class="text-red-500">กรุณาเลือกนักเรียนอย่างน้อย 1 คน</span>'; return; }
+  msg.textContent = 'กำลังส่งคำขอ...';
+  let ok = 0, skip = 0;
+  for (const id of teacherSelectedIds) {
+    const student = teacherSelectStudents.find(s => s.id === id);
+    if (!student) continue;
+    try {
+      const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',student.id), where('pointId','==',pointData.id)));
+      if (!dup.empty) { skip++; continue; }
+      await addDoc(collection(db, COL.REQUESTS), { participantId:student.id, participantName:student.name, participantPhone:student.phone, participantSchool:student.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null });
+      ok++;
+    } catch(_) { skip++; }
+  }
+  msg.innerHTML = '<span class="text-teal-600">ส่งคำขอสำเร็จ ' + ok + ' คน' + (skip ? (' (ข้าม ' + skip + ' รายการ)') : '') + '</span>';
+  teacherSelectedIds = new Set();
+  renderTeacherStudentPickList();
+};
+document.getElementById('teacher-self-submit').onclick = async () => {
+  const msg = document.getElementById('teacher-self-select-msg');
+  msg.textContent = 'กำลังส่งคำขอ...';
+  try {
+    let teacherParticipant = await findParticipantByPhone(currentTeacherPhone);
+    if (!teacherParticipant) {
+      const ref = await addDoc(collection(db, COL.PARTICIPANTS), { name: currentTeacherName || currentTeacherPhone, phone: currentTeacherPhone, school: currentTeacherSchool || '', note:'ครู', registeredBy:'teacher-self', createdAt: serverTimestamp() });
+      teacherParticipant = { id: ref.id, name: currentTeacherName || currentTeacherPhone, phone: currentTeacherPhone, school: currentTeacherSchool || '' };
     }
-    setTimeout(waitForTeacherPage, 250);
-  };
-  setTimeout(waitForTeacherPage, 250);
-})();
-` + '</scr' + 'ipt>';
-  return page.replace('</body>', noticeScript + '</body>');
+    const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',teacherParticipant.id), where('pointId','==',pointData.id)));
+    if (dup.empty) {
+      await addDoc(collection(db, COL.REQUESTS), { participantId:teacherParticipant.id, participantName:teacherParticipant.name, participantPhone:teacherParticipant.phone, participantSchool:teacherParticipant.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null });
+    }
+    msg.innerHTML = '<span class="text-teal-600">รับสำเร็จ! กำลังไปหน้าครู...</span>';
+    localStorage.setItem('art2569_teacher_phone', currentTeacherPhone);
+    setTimeout(() => {
+      if (parent !== window) parent.location.hash = 'teacher';
+      else location.hash = 'teacher';
+    }, 600);
+  } catch(err) {
+    msg.innerHTML = '<span class="text-red-500">รับไม่สำเร็จ: ' + (err.message || err.code) + '</span>';
+  }
+};
+document.getElementById('teacher-select-change').onclick = () => {
+  localStorage.removeItem(LS_PHONE);
+  localStorage.removeItem(LS_ID);
+  currentParticipant = null;
+  showLogin();
+};
+`;
+  page = page.replace(
+    `document.getElementById('register-change-phone').onclick = () => {`,
+    teacherActionScript + `\ndocument.getElementById('register-change-phone').onclick = () => {`
+  );
+
+  return page;
 }
 function fixTeacherQrPointParsing(page, key) {
   if (key !== 'teacher') return page;
@@ -358,7 +470,7 @@ function route() {
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key), key);
+  view.srcdoc = fixAdminClearActions(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
