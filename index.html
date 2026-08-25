@@ -426,33 +426,53 @@ async function resolveTeacherPointCode(raw){
 }
 function fixAdminClearActions(page, key) {
   if (key !== 'admin') return page;
-  page = page.replace(
-    `const deleteCollection = async (name) => { const snap = await getDocs(collection(db, name)); await Promise.all(snap.docs.map(d => deleteDoc(doc(db, name, d.id)))); };`,
-    `const deleteCollection = async (name, onProgress) => {
-  const snap = await getDocs(collection(db, name));
-  let deleted = 0;
-  // ลบทีละรายการเพื่อให้การลบจำนวนมากไม่ชนข้อจำกัดของ Firestore
-  for (const item of snap.docs) {
-    await deleteDoc(doc(db, name, item.id));
-    deleted += 1;
-    if (onProgress) onProgress(deleted, snap.size);
-  }
-  return deleted;
-};
+
+  // ผูกกับโมดูลแอดมินหลักโดยตรง เพราะสคริปต์ล้างข้อมูลเดิมเป็นโมดูลเสริม
+  // ที่อาจไม่ทำงานในบางเบราว์เซอร์/ไฟล์แบบฝัง srcdoc
+  const mainClearCode = `
 async function clearNamedData(name, label, buttonId) {
-  if (!confirm('ยืนยันล้าง' + label + 'ทั้งหมดหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้')) return;
-  const button = buttonId ? document.getElementById(buttonId) : null;
+  if (!window.confirm('ยืนยันล้าง' + label + 'ทั้งหมดหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้')) return;
+  const button = document.getElementById(buttonId);
   const originalText = button ? button.textContent : '';
   if (button) { button.disabled = true; button.textContent = 'กำลังล้างข้อมูล...'; }
   try {
-    const total = await deleteCollection(name);
-    alert('ล้าง' + label + 'ทั้งหมดแล้ว (' + total + ' รายการ)');
+    const snap = await getDocs(collection(db, name));
+    let deleted = 0;
+    for (const item of snap.docs) {
+      await deleteDoc(doc(db, name, item.id));
+      deleted += 1;
+    }
+    alert('ล้าง' + label + 'ทั้งหมดแล้ว (' + deleted + ' รายการ)');
   } catch (e) {
     alert('ล้างข้อมูลไม่สำเร็จ: ' + (e.message || e.code || 'ไม่ทราบสาเหตุ'));
   } finally {
     if (button) { button.disabled = false; button.textContent = originalText; }
   }
-}`
+}
+document.getElementById('clear-participants').addEventListener('click', () => clearNamedData(COL.PARTICIPANTS, 'ผู้เข้าร่วม', 'clear-participants'));
+document.getElementById('clear-requests').addEventListener('click', () => clearNamedData(COL.REQUESTS, 'คำขอ', 'clear-requests'));
+document.getElementById('clear-all-data').addEventListener('click', async () => {
+  if (!window.confirm('ยืนยันล้างข้อมูลกิจกรรมทั้งหมดหรือไม่? จะลบผู้เข้าร่วมและคำขอทั้งหมด')) return;
+  try {
+    const p = await getDocs(collection(db, COL.PARTICIPANTS));
+    for (const item of p.docs) await deleteDoc(doc(db, COL.PARTICIPANTS, item.id));
+    const r = await getDocs(collection(db, COL.REQUESTS));
+    for (const item of r.docs) await deleteDoc(doc(db, COL.REQUESTS, item.id));
+    alert('ล้างข้อมูลกิจกรรมทั้งหมดแล้ว');
+  } catch (e) {
+    alert('ล้างข้อมูลไม่สำเร็จ: ' + (e.message || e.code || 'ไม่ทราบสาเหตุ'));
+  }
+});`;
+
+  page = page.replace(
+    `document.getElementById('btn-logout').onclick = () => signOut(auth);`,
+    `document.getElementById('btn-logout').onclick = () => signOut(auth);${mainClearCode}`
+  );
+
+  // ปิด handler จากโมดูลเสริมเดิม เพื่อไม่ให้ยิงคำสั่งลบซ้ำ
+  page = page.replace(
+    `const deleteCollection = async (name) => { const snap = await getDocs(collection(db, name)); await Promise.all(snap.docs.map(d => deleteDoc(doc(db, name, d.id)))); };`,
+    `const deleteCollection = async (name) => { const snap = await getDocs(collection(db, name)); await Promise.all(snap.docs.map(d => deleteDoc(doc(db, name, d.id)))); };`
   );
   page = page.replace(
     `async function clearNamedData(name,label){ if(!confirm('ยืนยันล้าง'+label+'ทั้งหมดหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้')) return; try { await deleteCollection(name); alert('ล้าง'+label+'ทั้งหมดแล้ว'); } catch(e){ alert('ล้างข้อมูลไม่สำเร็จ: '+(e.message||e.code)); } }`,
@@ -460,9 +480,9 @@ async function clearNamedData(name, label, buttonId) {
   );
   page = page.replace(
     `document.getElementById('clear-participants').onclick = () => clearNamedData(COL.PARTICIPANTS,'ผู้เข้าร่วม');
-document.getElementById('clear-requests').onclick = () => clearNamedData(COL.REQUESTS,'คำขอ');`,
-    `document.getElementById('clear-participants').onclick = () => clearNamedData(COL.PARTICIPANTS, 'ผู้เข้าร่วม', 'clear-participants');
-document.getElementById('clear-requests').onclick = () => clearNamedData(COL.REQUESTS, 'คำขอ', 'clear-requests');`
+document.getElementById('clear-requests').onclick = () => clearNamedData(COL.REQUESTS,'คำขอ');
+document.getElementById('clear-all-data').onclick = async () => { if(!confirm('ยืนยันล้างข้อมูลกิจกรรมทั้งหมดหรือไม่? จะลบผู้เข้าร่วมและคำขอทั้งหมด')) return; try { await deleteCollection(COL.PARTICIPANTS); await deleteCollection(COL.REQUESTS); alert('ล้างข้อมูลกิจกรรมทั้งหมดแล้ว'); } catch(e){ alert('ล้างข้อมูลไม่สำเร็จ: '+(e.message||e.code)); } };`,
+    ``
   );
   return page;
 }
@@ -483,10 +503,14 @@ function fixTeacherDashboardSeparation(page, key) {
   if (key !== 'teacher') return page;
   page = page.replace(/\s*<button id="btn-recipient-self"[^>]*>[\s\S]*?<\/button>/, '');
   page = page.replace(/\ndocument\.getElementById\('btn-recipient-self'\)\.onclick = async \(\) => \{[\s\S]*?\n\};/, '');
+  page = page.replace(/\s*<button id="btn-scan-open"[^>]*>[\s\S]*?<\/button>/, '');
+  page = page.replace(/\s*<button id="btn-scan-self"[^>]*>[\s\S]*?<\/button>/, '');
+  page = page.replace(/\ndocument\.getElementById\('btn-scan-open'\)\.onclick = \(\) => \{[^\n]*\};/, '');
+  page = page.replace(/\ndocument\.getElementById\('btn-scan-self'\)\.onclick = \(\) => \{[^\n]*\};/, '');
   page = page.replace('สแกนสำเร็จ — เลือกผู้รับเกียรติบัตร', 'สแกนสำเร็จ — เลือกนักเรียนรับเกียรติบัตร');
   page = page.replace('เกียรติบัตรของฉัน', 'เกียรติบัตรครู');
-  page = page.replace('สแกนกิจกรรม</button>', 'สแกนกิจกรรมนักเรียน</button>');
-  page = page.replace('สแกน QR ทันที (เลือกผู้รับทีหลัง)', 'สแกน QR กิจกรรมนักเรียน');
+  page = page.replace('สแกนกิจกรรม</button>', 'กิจกรรมนักเรียน</button>');
+  page = page.replace('สแกน QR ทันที (เลือกผู้รับทีหลัง)', 'กิจกรรมนักเรียน');
   return page;
 }
 
@@ -518,8 +542,20 @@ function fixTeacherStudentSeparation(page, key) {
       `await submitRequestForParticipantAtPoint(p, point, 'teacher');`
     )
     .replace(
+      `students=[];snap.forEach(d=>students.push({id:d.id,...d.data()}));`,
+      `students=[];snap.forEach(d=>{const r={id:d.id,...d.data()};const norm=v=>String(v||'').replace(/\\D/g,'').replace(/^0+/,'');if(norm(r.phone)!==norm(teacherPhone)&&r.registeredBy!=='teacher-self'&&r.note!=='ครู')students.push(r);});`
+    )
+    .replace(
       `requests=[];snap.forEach(d=>requests.push({id:d.id,...d.data()}));`,
-      `requests=[];snap.forEach(d=>{const r={id:d.id,...d.data()};if(r.participantPhone!==teacherPhone&&r.recipientType!=='teacher')requests.push(r);});`
+      `requests=[];snap.forEach(d=>{const r={id:d.id,...d.data()};const norm=v=>String(v||'').replace(/\\D/g,'').replace(/^0+/,'');if(norm(r.participantPhone)!==norm(teacherPhone)&&r.recipientType!=='teacher')requests.push(r);});`
+    )
+    .replace(
+      '<div class="flex gap-1"><button data-select="${s.id}" class="btn bg-amber-300 px-2 py-1 text-xs">เลือกสแกน</button><button data-view="${s.id}" class="btn bg-white px-2 py-1 text-xs">ดูข้อมูล</button></div>',
+      '<div class="flex gap-1"><button data-view="${s.id}" class="btn bg-white px-2 py-1 text-xs">ดูข้อมูล</button></div>'
+    )
+    .replace(
+      `box.querySelectorAll('[data-select]').forEach(b=>b.onclick=()=>{selectStudent(b.getAttribute('data-select'));setTimeout(startTeacherScanner,80)});`,
+      ``
     );
 }
 
