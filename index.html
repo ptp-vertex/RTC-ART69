@@ -11,8 +11,8 @@
 <title>ART2569 — ระบบรวมทุกหน้า</title>
 <style>
 html, body { margin:0; width:100%; min-height:100%; height:auto; background:#f8fafc; overflow-x:hidden; overflow-y:auto; }
-#app { width:100%; min-height:100dvh; height:auto; }
-#view { display:block; border:0; width:100%; height:100dvh; min-height:0; }
+#app { width:100%; min-height:100dvh; height:auto; background:#fdf2f8; }
+#view { display:block; border:0; width:100%; height:100dvh; min-height:0; background:#fdf2f8; }
 </style>
 <style id="art2569-outer-zoom-lock">
 html,body,#app,#view{touch-action:manipulation;-ms-touch-action:manipulation;-webkit-text-size-adjust:100%;}
@@ -586,6 +586,26 @@ async function ensureUserScanTokenCapacity(token, type='student'){
     `    await submitRequestForParticipantAtPoint(currentParticipant, point);`,
     `    await submitRequestForParticipantAtPoint(currentParticipant, point, scanInfo);`
   );
+  return page;
+}
+
+function fixAutoApproveRequestCreation(page, key) {
+  if (key !== 'checkin') return page;
+  page = page.replaceAll("status: 'pending',\n      requestedAt: serverTimestamp(),\n      approvedBy: null,\n      approvedAt: null", "status: pointData.autoApprove === true ? 'approved' : 'pending',\n      requestedAt: serverTimestamp(),\n      approvedBy: pointData.autoApprove === true ? (auth.currentUser?.email || auth.currentUser?.uid || 'auto') : null,\n      approvedAt: pointData.autoApprove === true ? serverTimestamp() : null");
+  page = page.replaceAll("status:'pending', requestedAt: serverTimestamp(), approvedBy:null, approvedAt:null", "status: point.autoApprove === true ? 'approved' : 'pending', requestedAt: serverTimestamp(), approvedBy: point.autoApprove === true ? (auth.currentUser?.email || auth.currentUser?.uid || 'auto') : null, approvedAt: point.autoApprove === true ? serverTimestamp() : null");
+  page = page.replaceAll("status:'pending', requestedAt: serverTimestamp(), approvedBy:null, approvedAt:null,", "status: point.autoApprove === true ? 'approved' : 'pending', requestedAt: serverTimestamp(), approvedBy: point.autoApprove === true ? (auth.currentUser?.email || auth.currentUser?.uid || 'auto') : null, approvedAt: point.autoApprove === true ? serverTimestamp() : null,");
+  page = page.replaceAll("status: point.autoApprove === true ? 'approved' : 'pending', requestedAt: serverTimestamp(), approvedBy: point.autoApprove === true ? (auth.currentUser?.email || auth.currentUser?.uid || 'auto') : null, approvedAt: point.autoApprove === true ? serverTimestamp() : null, requestedByTeacher:", "status: pointData.autoApprove === true ? 'approved' : 'pending', requestedAt: serverTimestamp(), approvedBy: pointData.autoApprove === true ? (auth.currentUser?.email || auth.currentUser?.uid || 'auto') : null, approvedAt: pointData.autoApprove === true ? serverTimestamp() : null, requestedByTeacher:");
+  return page;
+}
+
+function forceCheckinAutoApproveFields(page, key) {
+  if (key !== 'checkin') return page;
+  const autoStatus = "status: pointData.autoApprove === true ? 'approved' : 'pending'";
+  const autoBy = "approvedBy: pointData.autoApprove === true ? (auth.currentUser?.email || auth.currentUser?.uid || 'auto') : null";
+  const autoAt = "approvedAt: pointData.autoApprove === true ? serverTimestamp() : null";
+  page = page.replace(/status\s*:\s*['"]pending['"](?=\s*,\s*requestedAt)/g, autoStatus);
+  page = page.replace(/approvedBy\s*:\s*null(?=\s*,\s*approvedAt)/g, autoBy);
+  page = page.replace(/approvedAt\s*:\s*null(?=\s*,\s*(requestedByTeacher|recipientType|scanToken|\}))/g, autoAt);
   return page;
 }
 
@@ -1424,6 +1444,37 @@ function replaceEmojiWithIcons(page) {
   return page;
 }
 
+function addNamePrefixDeduplication(page, key) {
+  const helper = '<script id="art2569-name-prefix-dedup-script">' + `(function(){
+  const ignored = /[\\s.。,，:：;；]/g;
+  const compact = value => String(value || '').toLocaleLowerCase().replace(ignored, '');
+  window.art2569ComposeName = function(prefix, rawName){
+    const p = String(prefix || '').trim();
+    let n = String(rawName || '').trim();
+    const normalizedPrefix = compact(p);
+    if (normalizedPrefix && n) {
+      for (let i = 0; i < 3 && compact(n).startsWith(normalizedPrefix); i++) {
+        let consumed = 0;
+        let end = 0;
+        while (end < n.length && consumed < normalizedPrefix.length) {
+          if (!ignored.test(n[end])) consumed++;
+          ignored.lastIndex = 0;
+          end++;
+        }
+        n = n.slice(end).replace(/^[\\s]+/, '');
+      }
+    }
+    return [p, n].filter(Boolean).join('');
+  };
+})();` + '<' + '/script>';
+  const nameExpr = "window.art2569ComposeName(prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName)";
+  const before = page;
+  page = page.replaceAll("const name = [prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName].filter(Boolean).join('')", `const name = ${nameExpr}`);
+  page = page.replaceAll("const fullName = [prefix, name].join('')", "const fullName = window.art2569ComposeName(prefix, name)");
+  if (page !== before && !page.includes('art2569-name-prefix-dedup-script')) page = page.replace('</body>', helper + '</body>');
+  return page;
+}
+
 function addNamePrefixValidation(page, key) {
   const formConfigs = [
     { form:'register-form', name:'reg-name', prefix:'reg-prefix', other:'reg-prefix-other', message:'register-result' },
@@ -1717,7 +1768,9 @@ import { db, COL, collection, getDocs } from '${moduleUrl}';
 let viewHeightTimer = null;
 function syncViewHeight() {
   if (!view) return;
-  const viewportHeight = Math.max(1, Math.ceil(window.visualViewport?.height || window.innerHeight || 1));
+  const frameDoc = view.contentDocument;
+  if (view.dataset.art2569KeyboardActive === '1') return;
+  const viewportHeight = Math.max(1, Math.ceil(window.innerHeight || document.documentElement.clientHeight || 1));
   view.style.height = viewportHeight + 'px';
   clearTimeout(viewHeightTimer);
   viewHeightTimer = setTimeout(() => {
@@ -1725,8 +1778,14 @@ function syncViewHeight() {
     if (!doc || !doc.documentElement || !doc.body) return;
     const contentHeight = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight, doc.documentElement.offsetHeight, doc.body.offsetHeight);
     view.style.height = Math.max(viewportHeight, contentHeight) + 'px';
+    if (!doc.__art2569KeyboardListeners) {
+      const editable = element => element && /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName);
+      doc.addEventListener('focusin', event => { if (editable(event.target)) view.dataset.art2569KeyboardActive = '1'; }, true);
+      doc.addEventListener('focusout', event => { if (editable(event.target)) setTimeout(() => { delete view.dataset.art2569KeyboardActive; syncViewHeight(); }, 120); }, true);
+      doc.__art2569KeyboardListeners = true;
+    }
     if (!doc.__art2569MutationObserver && typeof MutationObserver !== 'undefined') {
-      const schedule = () => { clearTimeout(viewHeightTimer); viewHeightTimer = setTimeout(syncViewHeight, 40); };
+      const schedule = () => { if (view.dataset.art2569KeyboardActive === '1') return; clearTimeout(viewHeightTimer); viewHeightTimer = setTimeout(syncViewHeight, 40); };
       const mutationObserver = new MutationObserver(schedule);
       mutationObserver.observe(doc.body, { childList:true, subtree:true, attributes:true });
       doc.__art2569MutationObserver = mutationObserver;
@@ -1755,17 +1814,21 @@ function route() {
   routedPage = addCheckinPrefixPicker(routedPage, key);
   routedPage = addScanTokenToCheckin(routedPage, key);
   routedPage = addScanTokenToUser(routedPage, key);
+  routedPage = fixAutoApproveRequestCreation(routedPage, key);
   routedPage = fixTeacherQrPointParsing(routedPage, key);
   routedPage = fixTeacherStudentModal(routedPage, key);
   routedPage = fixTeacherStudentSeparation(routedPage, key);
   routedPage = fixAdminClearActions(routedPage, key);
   routedPage = fixTeacherDashboardSeparation(routedPage, key);
+  routedPage = fixAutoApproveRequestCreation(routedPage, key);
   routedPage = addScanTokenToAdmin(routedPage, key);
   routedPage = addStatusColumnToApproved(routedPage, key);
   routedPage = addCertificateAnnouncementUI(routedPage, key);
   routedPage = addStudentTeacherCertificatePopup(routedPage, key);
   routedPage = addPointCertificateImage(routedPage, key);
+  routedPage = forceCheckinAutoApproveFields(routedPage, key);
   routedPage = addNamePrefixValidation(routedPage, key);
+  routedPage = addNamePrefixDeduplication(routedPage, key);
   routedPage = removeUserScanButton(routedPage, key);
   routedPage = replaceEmojiWithIcons(routedPage);
   view.srcdoc = routedPage;
@@ -1773,7 +1836,6 @@ function route() {
 }
 view.addEventListener('load', () => setTimeout(syncViewHeight, 0));
 window.addEventListener('resize', syncViewHeight, { passive:true });
-window.visualViewport?.addEventListener('resize', syncViewHeight, { passive:true });
 window.addEventListener('hashchange', route);
 route();
 
