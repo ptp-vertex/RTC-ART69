@@ -5,7 +5,7 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <link rel="icon" type="image/png" href="logo4.png">
 
 <title>ART2569 — ระบบรวมทุกหน้า</title>
@@ -13,6 +13,9 @@
 html, body { margin:0; width:100%; height:100%; background:#f8fafc; }
 #app { width:100%; height:100%; }
 #view { display:block; border:0; width:100%; height:100%; min-height:100vh; }
+</style>
+<style id="art2569-outer-zoom-lock">
+html,body,#app,#view{touch-action:manipulation;-ms-touch-action:manipulation;-webkit-text-size-adjust:100%;}
 </style>
 </head>
 <body>
@@ -1204,6 +1207,146 @@ function addCheckinPrefixPicker(page, key) {
   return page;
 }
 
+function addMobileZoomLock(page, key) {
+  const viewport = '<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">';
+  if (/<meta\s+name=["']viewport["'][^>]*>/i.test(page)) page = page.replace(/<meta\s+name=["']viewport["'][^>]*>/i, viewport);
+  else page = page.replace('<head>', '<head>' + viewport);
+  const lockStyle = `<style id="art2569-mobile-zoom-lock-style">
+  html,body{touch-action:manipulation;-ms-touch-action:manipulation;-webkit-text-size-adjust:100%;}
+  button,a,input,textarea,select{touch-action:manipulation;}
+  @media(max-width:768px){input,textarea,select{font-size:16px!important;}}
+  </style>`;
+  if (!page.includes('art2569-mobile-zoom-lock-style')) page = page.replace('</head>', lockStyle + '</head>');
+  const lockScript = '<script id="art2569-mobile-zoom-lock-script">' + `(function(){
+  if(window.__art2569MobileZoomLockInstalled) return;
+  window.__art2569MobileZoomLockInstalled = true;
+  const stopZoom = function(e){ e.preventDefault(); };
+  document.addEventListener('dblclick', stopZoom, {passive:false});
+  document.addEventListener('gesturestart', stopZoom, {passive:false});
+  document.addEventListener('gesturechange', stopZoom, {passive:false});
+  document.addEventListener('gestureend', stopZoom, {passive:false});
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', function(e){
+    const now = Date.now();
+    if(now - lastTouchEnd <= 350) e.preventDefault();
+    lastTouchEnd = now;
+  }, {passive:false});
+  document.addEventListener('touchmove', function(e){
+    if(e.touches && e.touches.length > 1) e.preventDefault();
+  }, {passive:false});
+})();` + '<' + '/script>';
+  if (!page.includes('art2569-mobile-zoom-lock-script')) page = page.replace('</body>', lockScript + '</body>');
+  return page;
+}
+
+function addNamePrefixValidation(page, key) {
+  const formConfigs = [
+    { form:'register-form', name:'reg-name', prefix:'reg-prefix', other:'reg-prefix-other', message:'register-result' },
+    { form:'register-form', name:'qname', prefix:'qprefix', other:'qprefix-other', message:'register-msg' },
+    { form:'staff-form', name:'st-name', prefix:'st-prefix', other:'st-prefix-other', message:'staff-msg' },
+    { form:'part-form', name:'pt-name', prefix:'pt-prefix', other:'pt-prefix-other', message:'' },
+    { form:'staff-student-form', name:'ss-name', prefix:'ss-prefix', other:'ss-prefix-other', message:'staff-student-msg' },
+    { form:'staff-teacher-form', name:'stc-name', prefix:'stc-prefix', other:'stc-prefix-other', message:'staff-teacher-msg' },
+    { form:'teacher-student-form', name:'teacher-student-name', prefix:'teacher-student-prefix', other:'teacher-student-prefix-other', message:'teacher-student-msg' }
+  ];
+  // ครอบคลุมคำนำหน้าเต็ม คำย่อ รูปแบบมี/ไม่มีจุด และภาษาอังกฤษ
+  const prefixWords = [
+    'ผู้ช่วยศาสตราจารย์','รองศาสตราจารย์','ศาสตราจารย์','ศาสตราจารย์ดร','อาจารย์','เด็กชาย','เด็กหญิง','นางสาว','บาทหลวง','หม่อมราชวงศ์','หม่อมหลวง','แม่ชี',
+    'Associate Professor','Assistant Professor','Professor','Master','Miss','Mrs','Ms','Mr','Dr','Prof','Mx',
+    'ด.ช.','ดช','ด.ญ.','ดญ','น.ส.','นส','ผศ.','ผศ','รศ.','รศ','ศ.ดร.','ศดร','ศ.','ศ','ดร.','ดร','ม.ร.ว.','มรช','ม.ล.','มล','ม.จ.','มจ','นาย','นาง','คุณ','พระ'
+  ];
+  const normalize = value => String(value || '').toLocaleLowerCase().replace(/[\\s\\u00a0]+/g, '').replace(/[.。,，:：;；]/g, '');
+  const normalizedPrefixes = Array.from(new Set(prefixWords.map(normalize).filter(Boolean))).sort((a,b) => b.length - a.length);
+  function duplicatedPrefix(value) {
+    const compact = normalize(String(value || '').replace(/^[\\s\\u00a0]+/, ''));
+    return normalizedPrefixes.some(prefix => compact === prefix || (compact.startsWith(prefix) && compact.length > prefix.length));
+  }
+  function errorBox(form, cfg) {
+    let el = cfg.message ? document.getElementById(cfg.message) : null;
+    if (!el) {
+      el = form.querySelector('[data-prefix-validation-msg]');
+      if (!el) {
+        el = document.createElement('p');
+        el.setAttribute('data-prefix-validation-msg','');
+        el.className = 'text-xs mt-2 text-red-500';
+        form.appendChild(el);
+      }
+    }
+    return el;
+  }
+  function attach(cfg) {
+    const form = document.getElementById(cfg.form);
+    const nameEl = document.getElementById(cfg.name);
+    const prefixEl = document.getElementById(cfg.prefix);
+    const otherEl = cfg.other ? document.getElementById(cfg.other) : null;
+    if (!form || !nameEl || !prefixEl || form.getAttribute('data-prefix-validation-installed') === '1') return;
+    form.setAttribute('data-prefix-validation-installed','1');
+    const validate = event => {
+      const raw = String(nameEl.value || '').trim().replace(/[\\s\\u00a0]+/g, ' ');
+      if (raw && duplicatedPrefix(raw)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        nameEl.classList.add('border-red-500');
+        const box = errorBox(form, cfg);
+        box.innerHTML = '<span class="text-red-500">ช่องชื่อ-นามสกุลห้ามใส่คำนำหน้าชื่อซ้ำ กรุณากรอกเฉพาะชื่อและนามสกุล</span>';
+        return false;
+      }
+      nameEl.classList.remove('border-red-500');
+      if (raw) nameEl.value = raw;
+      return true;
+    };
+    // ใช้ capture เพื่อให้ตรวจและแก้ค่าก่อน handler เดิมของแต่ละหน้าเริ่มบันทึกข้อมูล
+    form.addEventListener('submit', validate, true);
+    nameEl.addEventListener('input', () => {
+      nameEl.classList.remove('border-red-500');
+      const box = form.querySelector('[data-prefix-validation-msg]');
+      if (box) box.textContent = '';
+    });
+  }
+  // บังคับให้ข้อมูลที่ประกอบใหม่เป็นคำนำหน้าติดกับชื่อจริง แต่เว้นวรรคระหว่างชื่อกับนามสกุลได้ตามเดิม
+  page = page.replaceAll(".filter(Boolean).join(' ')", ".filter(Boolean).join('')");
+  page = page.replaceAll("const fullName = [prefix, name].join(' ')", "const fullName = [prefix, name].join('')");
+  const validationScript = '<script id="art2569-name-prefix-validation-script">' + `(function(){
+  const configs = ${JSON.stringify(formConfigs)};
+  configs.forEach(cfg => {
+    const form = document.getElementById(cfg.form);
+    const nameEl = document.getElementById(cfg.name);
+    const prefixEl = document.getElementById(cfg.prefix);
+    const otherEl = cfg.other ? document.getElementById(cfg.other) : null;
+    if(!form || !nameEl || !prefixEl || form.getAttribute('data-prefix-validation-installed') === '1') return;
+    form.setAttribute('data-prefix-validation-installed','1');
+    const prefixWords = ${JSON.stringify(prefixWords)};
+    const normalize = value => String(value || '').toLocaleLowerCase().replace(/[\\s\\u00a0]+/g, '').replace(/[.。,，:：;；]/g, '');
+    const prefixes = Array.from(new Set(prefixWords.map(normalize).filter(Boolean))).sort((a,b)=>b.length-a.length);
+    const duplicatedPrefix = value => {
+      const compact = normalize(String(value || '').replace(/^[\\s\\u00a0]+/, ''));
+      return prefixes.some(prefix => compact === prefix || (compact.startsWith(prefix) && compact.length > prefix.length));
+    };
+    const getMessage = () => {
+      let el = cfg.message ? document.getElementById(cfg.message) : null;
+      if(!el) {
+        el = form.querySelector('[data-prefix-validation-msg]');
+        if(!el){ el=document.createElement('p'); el.setAttribute('data-prefix-validation-msg',''); el.className='text-xs mt-2 text-red-500'; form.appendChild(el); }
+      }
+      return el;
+    };
+    form.addEventListener('submit', function(event){
+      const raw = String(nameEl.value || '').trim().replace(/[\\s\\u00a0]+/g, ' ');
+      if(raw && duplicatedPrefix(raw)){
+        event.preventDefault(); event.stopImmediatePropagation(); nameEl.classList.add('border-red-500');
+        getMessage().innerHTML='<span class="text-red-500">ช่องชื่อ-นามสกุลห้ามใส่คำนำหน้าชื่อซ้ำ กรุณากรอกเฉพาะชื่อและนามสกุล</span>';
+        return false;
+      }
+      nameEl.classList.remove('border-red-500');
+      if(raw) nameEl.value=raw;
+    }, true);
+    nameEl.addEventListener('input', function(){ nameEl.classList.remove('border-red-500'); const box=form.querySelector('[data-prefix-validation-msg]'); if(box) box.textContent=''; });
+  });
+})();` + '<' + '/script>';
+  if (!page.includes('art2569-name-prefix-validation-script')) page = page.replace('</body>', validationScript + '</body>');
+  return page;
+}
+
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
@@ -1213,6 +1356,7 @@ function route() {
   const key = page === 'teacherregister' ? 'teacherregister' : (pages[page] ? page : 'index');
   const sourceKey = key === 'teacherregister' ? 'registration' : key;
   let routedPage = enforceSchoolFieldsAndName(rewriteStorageImagesToFirestore(decode(pages[sourceKey]), sourceKey));
+  routedPage = addMobileZoomLock(routedPage, key);
   routedPage = addCheckinSuccessRedirect(routedPage, key);
   routedPage = addTeacherStudentRegistration(routedPage, key);
   routedPage = addTeacherRegistrationLink(routedPage, key);
@@ -1232,6 +1376,7 @@ function route() {
   routedPage = addCertificateAnnouncementUI(routedPage, key);
   routedPage = addStudentTeacherCertificatePopup(routedPage, key);
   routedPage = addPointCertificateImage(routedPage, key);
+  routedPage = addNamePrefixValidation(routedPage, key);
   view.srcdoc = routedPage;
   document.title = `ART2569 — ${key === 'teacherregister' ? 'ลงทะเบียนครู' : key}`;
 }
