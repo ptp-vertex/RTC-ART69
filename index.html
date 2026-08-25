@@ -941,18 +941,19 @@ function addCertificateAnnouncementUI(page, key) {
     const toggleMarker = '<label class="text-xs text-slate-500 mt-2 block">ข้อความประกาศใน popup</label>';
     const toggleMarkup = '<label class="flex items-center gap-2 text-xs text-slate-600 mt-2"><input id="s-certAnnounceEnabled" type="checkbox" checked class="h-4 w-4"> เปิดป็อปอัพก่อนเปิดลิงก์เกียรติบัตร</label>';
     page = page.replace(toggleMarker, toggleMarkup + toggleMarker);
+    page = page.replace('แบบเต็ม (ข้อความเต็ม)', 'แบบละเอียด (แสดงรูปและข้อความเต็ม)');
     page = page.replace(
       '<p id="cert-announce-text" class="text-sm text-slate-700 whitespace-pre-line leading-relaxed"></p>',
       '<img id="cert-announce-image" class="hidden w-full max-h-48 object-contain rounded-xl border-2 border-slate-900 mb-3" alt="รูปประกาศ">' + '<p id="cert-announce-text" class="text-sm text-slate-700 whitespace-pre-line leading-relaxed"></p>'
     );
-    page = page.replace("let certAnnounceStyle = 'compact';", "let certAnnounceStyle = 'compact';\nlet certAnnounceEnabled = true;");
+    page = page.replace("let certAnnounceStyle = 'compact';", "let certAnnounceStyle = 'compact';\nlet certAnnounceEnabled = true;\nlet certAnnounceBanner = '';\nwindow.addEventListener('art2569-certificate-banner-updated', async e => { certAnnounceBanner = String(e.detail || ''); try { await setDoc(doc(db, COL.SETTINGS, 'main'), { certificateAnnounceBanner: certAnnounceBanner }, { merge: true }); } catch (_) {} });");
     page = page.replace(
       "certAnnounceStyle = s.certificateAnnounceStyle === 'full' ? 'full' : 'compact';",
-      "certAnnounceStyle = s.certificateAnnounceStyle === 'full' ? 'full' : 'compact';\n  certAnnounceEnabled = s.certificateAnnounceEnabled !== false;\n  const announceToggle = document.getElementById('s-certAnnounceEnabled');\n  if (announceToggle) announceToggle.checked = certAnnounceEnabled;"
+      "certAnnounceStyle = s.certificateAnnounceStyle === 'full' ? 'full' : 'compact';\n  certAnnounceEnabled = s.certificateAnnounceEnabled !== false;\n  certAnnounceBanner = s.certificateAnnounceBanner || localStorage.getItem('art2569_certificate_banner_preview') || '';\n  const announceToggle = document.getElementById('s-certAnnounceEnabled');\n  if (announceToggle) announceToggle.checked = certAnnounceEnabled;"
     );
     page = page.replace(
       "certificateAnnounceStyle: document.getElementById('s-certAnnounceStyle').value === 'full' ? 'full' : 'compact'",
-      "certificateAnnounceStyle: document.getElementById('s-certAnnounceStyle').value === 'full' ? 'full' : 'compact',\n      certificateAnnounceEnabled: document.getElementById('s-certAnnounceEnabled')?.checked !== false"
+      "certificateAnnounceStyle: document.getElementById('s-certAnnounceStyle').value === 'full' ? 'full' : 'compact',\n      certificateAnnounceEnabled: document.getElementById('s-certAnnounceEnabled')?.checked !== false,\n      certificateAnnounceBanner: localStorage.getItem('art2569_certificate_banner_preview') || certAnnounceBanner || ''"
     );
     page = page.replace(
       "certAnnounceStyle = document.getElementById('s-certAnnounceStyle').value === 'full' ? 'full' : 'compact';",
@@ -964,7 +965,7 @@ function addCertificateAnnouncementUI(page, key) {
     );
     page = page.replace(
       "const textEl = document.getElementById('cert-announce-text');\n  const defaultMsg",
-      "const textEl = document.getElementById('cert-announce-text');\n  const imageEl = document.getElementById('cert-announce-image');\n  const banner = localStorage.getItem('art2569_certificate_banner_preview') || '';\n  if (imageEl) { imageEl.src = banner; imageEl.classList.toggle('hidden', !banner); }\n  const defaultMsg"
+      "const textEl = document.getElementById('cert-announce-text');\n  const imageEl = document.getElementById('cert-announce-image');\n  const banner = certAnnounceBanner || localStorage.getItem('art2569_certificate_banner_preview') || '';\n  if (imageEl) { imageEl.src = banner; imageEl.classList.toggle('hidden', !banner); }\n  const defaultMsg"
     );
   }
 
@@ -975,7 +976,7 @@ function addCertificateAnnouncementUI(page, key) {
     );
     page = page.replace(
       "const style = settings.certificateAnnounceStyle === 'full' ? 'full' : 'compact';",
-      "const enabled = settings.certificateAnnounceEnabled !== false;\n    const style = settings.certificateAnnounceStyle === 'full' ? 'full' : 'compact';"
+      "const enabled = settings.certificateAnnounceEnabled !== false;\n    const style = settings.certificateAnnounceStyle === 'full' ? 'full' : 'compact';\n    const banner = settings.certificateAnnounceBanner || localStorage.getItem('art2569_certificate_banner_preview') || '';"
     );
     page = page.replace(
       "const textEl = document.getElementById('cert-announce-text');\n    const goBtn",
@@ -983,7 +984,7 @@ function addCertificateAnnouncementUI(page, key) {
     );
     page = page.replace(
       "driveBtn.onclick = () => {\n      textEl.textContent",
-      "driveBtn.onclick = () => {\n      if (!enabled) { window.open(driveLink, '_blank', 'noopener'); return; }\n      const banner = localStorage.getItem('art2569_certificate_banner_preview') || '';\n      if (imageEl) { imageEl.src = banner; imageEl.classList.toggle('hidden', !banner); }\n      textEl.textContent"
+      "driveBtn.onclick = () => {\n      if (!enabled) { window.open(driveLink, '_blank', 'noopener'); return; }\n      if (imageEl) { imageEl.src = banner; imageEl.classList.toggle('hidden', !banner); }\n      textEl.textContent"
     );
   }
 
@@ -996,12 +997,12 @@ function addCertificateAnnouncementUI(page, key) {
     const overlay = '<div id="approved-cert-announce-overlay" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4"><div class="bg-white border-2 border-slate-900 rounded-2xl max-w-sm w-full p-5 shadow-[6px_6px_0_rgba(15,23,42,.9)]"><p class="text-xs font-bold tracking-wide text-amber-600 mb-1">📢 ประกาศ</p><img id="approved-cert-announce-image" class="hidden w-full max-h-48 object-contain rounded-xl border-2 border-slate-900 mb-3" alt="รูปประกาศ"><p id="approved-cert-announce-text" class="text-sm text-slate-700 whitespace-pre-line leading-relaxed"></p><div class="flex justify-end gap-2 mt-4"><button id="approved-cert-announce-cancel" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-white">ปิด</button><button id="approved-cert-announce-go" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-pink-500 text-white">ไปที่เกียรติบัตร</button></div></div></div>';
     page = page.replace('</body>', overlay + '</body>');
     const popupScript = `
-let approvedCertSettings = { link: '', announce: '', style: 'compact', enabled: true };
+let approvedCertSettings = { link: '', announce: '', style: 'compact', enabled: true, banner: '' };
 async function loadApprovedCertAnnounceSettings(){
   try {
     const snap = await getDoc(doc(db, 'cert_settings', 'main'));
     const s = snap.exists() ? snap.data() : {};
-    approvedCertSettings = { link: (s.certificateLink || certLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false };
+    approvedCertSettings = { link: (s.certificateLink || certLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false, banner: s.certificateAnnounceBanner || localStorage.getItem('art2569_certificate_banner_preview') || '' };
     certLink = approvedCertSettings.link;
   } catch (_) {}
 }
@@ -1011,7 +1012,7 @@ function openApprovedCertAnnounce(){
   const overlay = document.getElementById('approved-cert-announce-overlay');
   const textEl = document.getElementById('approved-cert-announce-text');
   const imageEl = document.getElementById('approved-cert-announce-image');
-  const banner = localStorage.getItem('art2569_certificate_banner_preview') || '';
+  const banner = approvedCertSettings.banner || localStorage.getItem('art2569_certificate_banner_preview') || '';
   const defaultMsg = 'กรุณาตรวจสอบชื่อ-นามสกุลในเกียรติบัตรให้ถูกต้อง หากพบข้อผิดพลาดกรุณาติดต่อเจ้าหน้าที่';
   const fullMsg = approvedCertSettings.announce;
   const shortMsg = fullMsg ? (fullMsg.length > 90 ? fullMsg.slice(0, 90).trim() + '…' : fullMsg) : defaultMsg;
@@ -1067,7 +1068,7 @@ function addStudentTeacherCertificatePopup(page, key) {
     const overlay = '<div id="user-cert-announce-overlay" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4"><div class="bg-white border-2 border-slate-900 rounded-2xl max-w-sm w-full p-5 shadow-[6px_6px_0_rgba(15,23,42,.9)]"><p class="text-xs font-bold tracking-wide text-amber-600 mb-1">📢 ประกาศ</p><img id="user-cert-announce-image" class="hidden w-full max-h-48 object-contain rounded-xl border-2 border-slate-900 mb-3" alt="รูปประกาศ"><p id="user-cert-announce-text" class="text-sm text-slate-700 whitespace-pre-line leading-relaxed"></p><div class="flex justify-end gap-2 mt-4"><button id="user-cert-announce-cancel" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-white">ปิด</button><button id="user-cert-announce-go" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-pink-500 text-white">ไปที่เกียรติบัตร</button></div></div></div>';
     page = page.replace('</body>', overlay + '</body>');
     const popupCode = String.raw`
-let userCertSettings = { link: '', announce: '', style: 'compact', enabled: true };
+let userCertSettings = { link: '', announce: '', style: 'compact', enabled: true, banner: '' };
 function openUserCertAnnounce(){
   const link = (userCertSettings.link || certLink || '').trim();
   if (!link) return;
@@ -1075,7 +1076,7 @@ function openUserCertAnnounce(){
   const overlay = document.getElementById('user-cert-announce-overlay');
   const textEl = document.getElementById('user-cert-announce-text');
   const imageEl = document.getElementById('user-cert-announce-image');
-  const banner = localStorage.getItem('art2569_certificate_banner_preview') || '';
+  const banner = userCertSettings.banner || localStorage.getItem('art2569_certificate_banner_preview') || '';
   const defaultMsg = 'กรุณาตรวจสอบชื่อ-นามสกุลในเกียรติบัตรให้ถูกต้อง หากพบข้อผิดพลาดกรุณาติดต่อเจ้าหน้าที่';
   const fullMsg = userCertSettings.announce || '';
   const shortMsg = fullMsg ? (fullMsg.length > 90 ? fullMsg.slice(0, 90).trim() + '…' : fullMsg) : defaultMsg;
@@ -1091,7 +1092,7 @@ document.getElementById('history-list').addEventListener('click', e => { const b
     page = page.replace("let certLink = '';", "let certLink = '';\n" + popupCode);
     page = page.replace(
       "certLink = s.certificateLink || '';",
-      "certLink = s.certificateLink || '';\n  userCertSettings = { link: (s.certificateLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false };"
+      "certLink = s.certificateLink || '';\n  userCertSettings = { link: (s.certificateLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false, banner: s.certificateAnnounceBanner || localStorage.getItem('art2569_certificate_banner_preview') || '' };"
     );
   }
 
@@ -1102,7 +1103,7 @@ document.getElementById('history-list').addEventListener('click', e => { const b
     const overlay = '<div id="teacher-cert-announce-overlay" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4"><div class="bg-white border-2 border-slate-900 rounded-2xl max-w-sm w-full p-5 shadow-[6px_6px_0_rgba(15,23,42,.9)]"><p class="text-xs font-bold tracking-wide text-amber-600 mb-1">📢 ประกาศ</p><img id="teacher-cert-announce-image" class="hidden w-full max-h-48 object-contain rounded-xl border-2 border-slate-900 mb-3" alt="รูปประกาศ"><p id="teacher-cert-announce-text" class="text-sm text-slate-700 whitespace-pre-line leading-relaxed"></p><div class="flex justify-end gap-2 mt-4"><button id="teacher-cert-announce-cancel" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-white">ปิด</button><button id="teacher-cert-announce-go" type="button" class="border-2 border-slate-900 rounded-xl px-4 py-1.5 text-xs font-semibold bg-pink-500 text-white">ไปที่เกียรติบัตร</button></div></div></div>';
     page = page.replace('</body>', overlay + '</body>');
     const popupCode = String.raw`
-let teacherCertSettings = { link: '', announce: '', style: 'compact', enabled: true };
+let teacherCertSettings = { link: '', announce: '', style: 'compact', enabled: true, banner: '' };
 function openTeacherCertAnnounce(){
   const link = (teacherCertSettings.link || certLink || '').trim();
   if (!link) return;
@@ -1110,7 +1111,7 @@ function openTeacherCertAnnounce(){
   const overlay = document.getElementById('teacher-cert-announce-overlay');
   const textEl = document.getElementById('teacher-cert-announce-text');
   const imageEl = document.getElementById('teacher-cert-announce-image');
-  const banner = localStorage.getItem('art2569_certificate_banner_preview') || '';
+  const banner = teacherCertSettings.banner || localStorage.getItem('art2569_certificate_banner_preview') || '';
   const defaultMsg = 'กรุณาตรวจสอบชื่อ-นามสกุลในเกียรติบัตรให้ถูกต้อง หากพบข้อผิดพลาดกรุณาติดต่อเจ้าหน้าที่';
   const fullMsg = teacherCertSettings.announce || '';
   const shortMsg = fullMsg ? (fullMsg.length > 90 ? fullMsg.slice(0, 90).trim() + '…' : fullMsg) : defaultMsg;
@@ -1126,9 +1127,80 @@ document.addEventListener('click', e => { const btn = e.target.closest('[data-te
     page = page.replace("let certLink = '';", "let certLink = '';\n" + popupCode);
     page = page.replace(
       "getSiteSettings().then(s => { certLink = s.certificateLink || ''; renderTeacherSelf(); renderStudents(); });",
-      "getSiteSettings().then(s => { certLink = s.certificateLink || ''; teacherCertSettings = { link: (s.certificateLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false }; renderTeacherSelf(); renderStudents(); });"
+      "getSiteSettings().then(s => { certLink = s.certificateLink || ''; teacherCertSettings = { link: (s.certificateLink || '').trim(), announce: (s.certificateAnnounce || '').trim(), style: s.certificateAnnounceStyle === 'full' ? 'full' : 'compact', enabled: s.certificateAnnounceEnabled !== false, banner: s.certificateAnnounceBanner || localStorage.getItem('art2569_certificate_banner_preview') || '' }; renderTeacherSelf(); renderStudents(); });"
     );
   }
+  return page;
+}
+
+function addCheckinPrefixPicker(page, key) {
+  if (key !== 'checkin') return page;
+  const prefixStyle = `<style>
+  .prefix-picker{position:relative;min-width:0;width:100%;}
+  .prefix-trigger{width:100%;min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:.5rem;border:2px solid #0f172a;border-radius:.85rem;padding:.62rem .8rem;background:#fff;color:#1e293b;font-size:.9rem;font-weight:500;transition:.15s;}
+  .prefix-trigger:hover,.prefix-trigger.is-open{border-color:#ec4899;box-shadow:0 0 0 3px rgba(236,72,153,.12);}
+  .prefix-menu{position:absolute;left:0;right:0;top:calc(100% + .35rem);z-index:60;display:grid;gap:.35rem;padding:.5rem;background:#fff;border:2px solid #0f172a;border-radius:1rem;box-shadow:4px 4px 0 rgba(15,23,42,.9);}
+  .prefix-menu.hidden{display:none;}
+  .prefix-option{border:1px solid #cbd5e1;border-radius:.65rem;background:#fff;padding:.45rem .6rem;text-align:left;font-size:.85rem;color:#334155;transition:.12s;}
+  .prefix-option:hover,.prefix-option.is-selected{background:#fce7f3;border-color:#ec4899;color:#be185d;font-weight:600;}
+  .prefix-value{position:absolute!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;}
+  .prefix-other{width:100%;margin-top:.55rem;border:2px solid #0f172a;border-radius:.85rem;padding:.62rem .8rem;font-size:.9rem;background:#fff;color:#1e293b;outline:none;}
+  .prefix-other:focus{border-color:#ec4899;box-shadow:0 0 0 3px rgba(236,72,153,.12);}
+  .prefix-chevron{width:9px;height:9px;display:inline-block;flex:0 0 9px;border-right:2px solid #ec4899;border-bottom:2px solid #ec4899;transform:rotate(45deg) translateY(-2px);transition:transform .18s ease;border-radius:1px;}
+  .prefix-trigger.is-open .prefix-chevron{transform:rotate(225deg) translate(-1px,-1px);}
+  </style>`;
+  page = page.replace('</head>', prefixStyle + '</head>');
+  const oldSelect = `<select id="qprefix" required class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm">
+        <option value="">คำนำหน้าชื่อ</option>
+        <option>เด็กชาย</option><option>เด็กหญิง</option><option>นาย</option><option>นางสาว</option><option>นาง</option><option>อื่นๆ</option>
+      </select>`;
+  const newSelect = `<div class="prefix-picker" data-prefix-picker="qprefix">
+        <button type="button" class="prefix-trigger" data-prefix-trigger="qprefix"><span data-prefix-label="qprefix">คำนำหน้าชื่อ</span><span class="prefix-chevron" aria-hidden="true"></span></button>
+        <div class="prefix-menu hidden" data-prefix-menu="qprefix">
+          <button type="button" class="prefix-option" data-prefix-value="เด็กชาย">เด็กชาย</button>
+          <button type="button" class="prefix-option" data-prefix-value="เด็กหญิง">เด็กหญิง</button>
+          <button type="button" class="prefix-option" data-prefix-value="นาย">นาย</button>
+          <button type="button" class="prefix-option" data-prefix-value="นางสาว">นางสาว</button>
+          <button type="button" class="prefix-option" data-prefix-value="นาง">นาง</button>
+          <button type="button" class="prefix-option" data-prefix-value="อื่นๆ โปรดระบุ">อื่นๆ โปรดระบุ</button>
+        </div>
+      </div>
+      <select id="qprefix" required class="prefix-value"><option value="">คำนำหน้าชื่อ</option><option value="เด็กชาย">เด็กชาย</option><option value="เด็กหญิง">เด็กหญิง</option><option value="นาย">นาย</option><option value="นางสาว">นางสาว</option><option value="นาง">นาง</option><option value="อื่นๆโปรดระบุ">อื่นๆ โปรดระบุ</option></select>
+      <input id="qprefix-other" class="prefix-other hidden" placeholder="โปรดระบุคำนำหน้าชื่อ">`;
+  if (!page.includes(oldSelect)) return page;
+  page = page.replace(oldSelect, newSelect);
+  page = page.replace(
+    "  const prefix = document.getElementById('qprefix').value;\n  const name = document.getElementById('qname').value.trim();",
+    "  const prefix = document.getElementById('qprefix').value;\n  const prefixOther = document.getElementById('qprefix-other').value.trim();\n  const rawName = document.getElementById('qname').value.trim();\n  const name = [prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName].filter(Boolean).join(' ');"
+  );
+  page = page.replace(
+    "  if(!prefix || !name || !school){ msg.innerHTML = '<span class=\"text-red-500\">กรุณากรอกข้อมูลให้ครบ</span>'; return; }",
+    "  if(!prefix || (prefix === 'อื่นๆโปรดระบุ' && !prefixOther) || !rawName || !school){ msg.innerHTML = '<span class=\"text-red-500\">กรุณากรอกข้อมูลให้ครบ</span>'; return; }"
+  );
+  const pickerScript = `<script>
+(function(){
+  const picker=document.querySelector('[data-prefix-picker="qprefix"]');
+  if(!picker) return;
+  const select=document.getElementById('qprefix');
+  const other=document.getElementById('qprefix-other');
+  const trigger=picker.querySelector('[data-prefix-trigger="qprefix"]');
+  const menu=picker.querySelector('[data-prefix-menu="qprefix"]');
+  const label=picker.querySelector('[data-prefix-label="qprefix"]');
+  function sync(){
+    const selected=select.options[select.selectedIndex];
+    label.textContent=selected && selected.value ? selected.textContent : 'คำนำหน้าชื่อ';
+    other.classList.toggle('hidden', select.value !== 'อื่นๆโปรดระบุ');
+    other.required = select.value === 'อื่นๆโปรดระบุ';
+    picker.querySelectorAll('.prefix-option').forEach(b=>b.classList.toggle('is-selected', b.getAttribute('data-prefix-value') === (select.value === 'อื่นๆโปรดระบุ' ? 'อื่นๆ โปรดระบุ' : select.value)));
+  }
+  trigger.addEventListener('click',function(e){e.stopPropagation();document.querySelectorAll('[data-prefix-menu]').forEach(m=>{if(m!==menu)m.classList.add('hidden')});menu.classList.toggle('hidden');trigger.classList.toggle('is-open',!menu.classList.contains('hidden'));});
+  picker.querySelectorAll('[data-prefix-value]').forEach(function(btn){btn.addEventListener('click',function(){const value=btn.getAttribute('data-prefix-value');select.value=value==='อื่นๆ โปรดระบุ'?'อื่นๆโปรดระบุ':value;select.dispatchEvent(new Event('change',{bubbles:true}));menu.classList.add('hidden');trigger.classList.remove('is-open');});});
+  select.addEventListener('change',sync);
+  document.addEventListener('click',function(){menu.classList.add('hidden');trigger.classList.remove('is-open');});
+  sync();
+})();
+` + '<' + '/script>';
+  page = page.replace('</body>', pickerScript + '</body>');
   return page;
 }
 
@@ -1147,6 +1219,7 @@ function route() {
   routedPage = addTeacherHomeRegistrationLink(routedPage, key);
   routedPage = addTeacherRegistrationPage(routedPage, key);
   routedPage = addTeacherPhoneGuard(routedPage, key);
+  routedPage = addCheckinPrefixPicker(routedPage, key);
   routedPage = addScanTokenToCheckin(routedPage, key);
   routedPage = addScanTokenToUser(routedPage, key);
   routedPage = fixTeacherQrPointParsing(routedPage, key);
@@ -1260,6 +1333,7 @@ route();
       try {
         const dataUrl = await compressImage(selected);
         localStorage.setItem(STORAGE.certificate, dataUrl);
+        try { const EventCtor = doc.defaultView.CustomEvent || CustomEvent; doc.defaultView.dispatchEvent(new EventCtor('art2569-certificate-banner-updated', { detail: dataUrl })); } catch (_) {}
         setPreview(doc, preview, dataUrl, status);
         remove.classList.remove('hidden');
         status.textContent = 'บันทึกตัวอย่างแล้ว ✅';
@@ -1271,6 +1345,7 @@ route();
     });
     remove.addEventListener('click', () => {
       localStorage.removeItem(STORAGE.certificate);
+      try { const EventCtor = doc.defaultView.CustomEvent || CustomEvent; doc.defaultView.dispatchEvent(new EventCtor('art2569-certificate-banner-updated', { detail: '' })); } catch (_) {}
       setPreview(doc, preview, '', status);
       remove.classList.add('hidden');
     });
