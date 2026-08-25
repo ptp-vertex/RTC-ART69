@@ -166,12 +166,62 @@ function addCheckinSuccessRedirect(page, key) {
   );
   return page;
 }
+function addTeacherPhoneGuard(page, key) {
+  if (key !== 'checkin') return page;
+  page = page.replace(
+    'import { auth, db, COL, ensureAnonymous,',
+    'import { auth, db, COL, phoneAuthEmail, ensureAnonymous,'
+  );
+  const guardedLogin = `
+  try {
+    const staffSnap = await getDocs(query(collection(db, COL.STAFF), where('phone','==',phone)));
+    const staff = staffSnap.empty ? null : staffSnap.docs[0].data();
+    const teacherIsAlreadyLoggedIn = staff?.role === 'teacher' &&
+      auth.currentUser?.email === phoneAuthEmail(phone);
+    if (staff?.role === 'teacher' && !teacherIsAlreadyLoggedIn) {
+      localStorage.setItem('art2569_teacher_login_notice', 'เบอร์นี้เป็นบัญชีครู กรุณาเข้าสู่ระบบหน้าครูก่อน แล้วสแกน QR อีกครั้ง');
+      alert('เบอร์นี้เป็นบัญชีครู\\nกรุณาเข้าสู่ระบบหน้าครูก่อน แล้วสแกน QR อีกครั้ง');
+      if (parent !== window) parent.location.hash = 'teacher';
+      else location.hash = 'teacher';
+      return;
+    }
+    await resolveIdentity(phone);
+  } catch(err){
+    msg.innerHTML = '<span class="text-red-500">เข้าสู่ระบบไม่สำเร็จ: '+(err.message||err.code)+'</span>';
+  }`;
+  page = page.replace(
+    `  try {
+    await resolveIdentity(phone);
+  } catch(err){
+    msg.innerHTML = '<span class="text-red-500">เข้าสู่ระบบไม่สำเร็จ: '+(err.message||err.code)+'</span>';
+  }`,
+    guardedLogin
+  );
+  return page;
+}
+function fixTeacherQrPointParsing(page, key) {
+  if (key !== 'teacher') return page;
+  page = page.replace(
+    `function extractPoint(raw){ const u=new URL(raw,location.href); return u.searchParams.get('point')||u.searchParams.get('p'); }`,
+    `function extractPoint(raw){
+  try {
+    const u = new URL(raw, location.href);
+    const direct = u.searchParams.get('point') || u.searchParams.get('p');
+    if (direct) return direct;
+    const hashQuery = (u.hash || '').split('?')[1] || '';
+    const hashParams = new URLSearchParams(hashQuery);
+    return hashParams.get('point') || hashParams.get('p') || '';
+  } catch (_) { return ''; }
+}`
+  );
+  return page;
+}
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key);
+  view.srcdoc = fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
