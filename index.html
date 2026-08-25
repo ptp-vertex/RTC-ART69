@@ -170,17 +170,22 @@ function addTeacherPhoneGuard(page, key) {
   if (key !== 'checkin') return page;
   page = page.replace(
     'import { auth, db, COL, ensureAnonymous,',
-    'import { auth, db, COL, phoneAuthEmail, ensureAnonymous,'
+    'import { auth, db, COL, phoneKey, phoneAuthEmail, ensureAnonymous,'
   );
   const guardedLogin = `
   try {
     const staffSnap = await getDocs(query(collection(db, COL.STAFF), where('phone','==',phone)));
     const staff = staffSnap.empty ? null : staffSnap.docs[0].data();
-    const teacherIsAlreadyLoggedIn = staff?.role === 'teacher' &&
-      auth.currentUser?.email === phoneAuthEmail(phone);
-    if (staff?.role === 'teacher' && !teacherIsAlreadyLoggedIn) {
-      localStorage.setItem('art2569_teacher_login_notice', 'เบอร์นี้เป็นบัญชีครู กรุณาเข้าสู่ระบบหน้าครูก่อน แล้วสแกน QR อีกครั้ง');
-      alert('เบอร์นี้เป็นบัญชีครู\\nกรุณาเข้าสู่ระบบหน้าครูก่อน แล้วสแกน QR อีกครั้ง');
+    const teacherWasLoggedInBefore = staff?.role === 'teacher' && (
+      auth.currentUser?.email === phoneAuthEmail(phone) ||
+      phoneKey(localStorage.getItem('art2569_teacher_phone') || '') === phoneKey(phone)
+    );
+    if (staff?.role === 'teacher') {
+      const notice = teacherWasLoggedInBefore
+        ? 'พบเบอร์ครูและกำลังเข้าสู่ระบบครูอัตโนมัติ\\nกรุณาเลือกเมนู “สแกนกิจกรรม” แล้วสแกน QR อีกครั้ง'
+        : 'เบอร์นี้เป็นบัญชีครู\\nกรุณาเข้าสู่ระบบหน้าครูก่อน แล้วเลือก “สแกนกิจกรรม” เพื่อสแกน QR อีกครั้ง';
+      localStorage.setItem('art2569_teacher_login_notice', notice);
+      alert(notice);
       if (parent !== window) parent.location.hash = 'teacher';
       else location.hash = 'teacher';
       return;
@@ -199,6 +204,27 @@ function addTeacherPhoneGuard(page, key) {
   );
   return page;
 }
+function addTeacherReturnNotice(page, key) {
+  if (key !== 'teacher') return page;
+  const noticeScript = '<scr' + 'ipt>' + `
+(function showTeacherReturnNotice(){
+  const notice = localStorage.getItem('art2569_teacher_login_notice');
+  if (!notice) return;
+  const started = Date.now();
+  const waitForTeacherPage = () => {
+    const dash = document.getElementById('dash-box');
+    if ((dash && !dash.classList.contains('hidden')) || (Date.now() - started > 7000)) {
+      alert(notice);
+      localStorage.removeItem('art2569_teacher_login_notice');
+      return;
+    }
+    setTimeout(waitForTeacherPage, 250);
+  };
+  setTimeout(waitForTeacherPage, 250);
+})();
+` + '</scr' + 'ipt>';
+  return page.replace('</body>', noticeScript + '</body>');
+}
 function fixTeacherQrPointParsing(page, key) {
   if (key !== 'teacher') return page;
   page = page.replace(
@@ -212,7 +238,71 @@ function fixTeacherQrPointParsing(page, key) {
     const hashParams = new URLSearchParams(hashQuery);
     return hashParams.get('point') || hashParams.get('p') || '';
   } catch (_) { return ''; }
+}
+async function resolveTeacherPointCode(raw){
+  const direct = extractPoint(raw);
+  if (direct) return direct;
+  let target;
+  try { target = new URL(String(raw || '').trim(), location.href); } catch (_) { return ''; }
+  if (!/^https?:$/.test(target.protocol)) return '';
+  try {
+    // Follow the Dynamic QR redirect without navigating away from the teacher page.
+    const response = await fetch(target.href, { redirect: 'follow', cache: 'no-store' });
+    const finalCode = extractPoint(response.url);
+    if (finalCode) return finalCode;
+  } catch (_) {}
+  // รองรับลิงก์ Dynamic QR ที่ส่ง URL ปลายทางมาในพารามิเตอร์
+  for (const key of ['url','u','redirect','redirect_url','link','target']) {
+    const nested = target.searchParams.get(key);
+    if (nested) {
+      const nestedCode = extractPoint(nested);
+      if (nestedCode) return nestedCode;
+    }
+  }
+  return '';
 }`
+  );
+  page = page.replace(
+    `const pointCode=extractPoint(raw); if(!pointCode)throw new Error('ไม่พบรหัสจุดใน QR');`,
+    `const pointCode=await resolveTeacherPointCode(raw); if(!pointCode)throw new Error('ไม่พบจุด QR หรือไม่สามารถเปิดลิงก์ Dynamic QR ได้');`
+  );
+  return page;
+}
+function fixAdminClearActions(page, key) {
+  if (key !== 'admin') return page;
+  page = page.replace(
+    `const deleteCollection = async (name) => { const snap = await getDocs(collection(db, name)); await Promise.all(snap.docs.map(d => deleteDoc(doc(db, name, d.id)))); };`,
+    `const deleteCollection = async (name, onProgress) => {
+  const snap = await getDocs(collection(db, name));
+  let deleted = 0;
+  // ลบทีละรายการเพื่อให้การลบจำนวนมากไม่ชนข้อจำกัดของ Firestore
+  for (const item of snap.docs) {
+    await deleteDoc(doc(db, name, item.id));
+    deleted += 1;
+    if (onProgress) onProgress(deleted, snap.size);
+  }
+  return deleted;
+};
+async function clearNamedData(name, label, buttonId) {
+  if (!confirm('ยืนยันล้าง' + label + 'ทั้งหมดหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้')) return;
+  const button = buttonId ? document.getElementById(buttonId) : null;
+  const originalText = button ? button.textContent : '';
+  if (button) { button.disabled = true; button.textContent = 'กำลังล้างข้อมูล...'; }
+  try {
+    const total = await deleteCollection(name);
+    alert('ล้าง' + label + 'ทั้งหมดแล้ว (' + total + ' รายการ)');
+  } catch (e) {
+    alert('ล้างข้อมูลไม่สำเร็จ: ' + (e.message || e.code || 'ไม่ทราบสาเหตุ'));
+  } finally {
+    if (button) { button.disabled = false; button.textContent = originalText; }
+  }
+}`
+  );
+  page = page.replace(
+    `document.getElementById('clear-participants').onclick = () => clearNamedData(COL.PARTICIPANTS,'ผู้เข้าร่วม');
+document.getElementById('clear-requests').onclick = () => clearNamedData(COL.REQUESTS,'คำขอ');`,
+    `document.getElementById('clear-participants').onclick = () => clearNamedData(COL.PARTICIPANTS, 'ผู้เข้าร่วม', 'clear-participants');
+document.getElementById('clear-requests').onclick = () => clearNamedData(COL.REQUESTS, 'คำขอ', 'clear-requests');`
   );
   return page;
 }
@@ -221,7 +311,7 @@ function route() {
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key);
+  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
