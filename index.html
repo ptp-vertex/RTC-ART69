@@ -313,14 +313,37 @@ const pointCode = params.get('point') || params.get('p') || '';
 let pointData = null;`,
     `const params = new URLSearchParams(parent.location.hash.split("?")[1] || "");
 const pointCode = params.get('point') || params.get('p') || '';
-const scanToken = params.get('token') || '';
-const scanTokenExpiresAt = Number((scanToken.split('.').pop() || '0'));
+let scanToken = params.get('token') || '';
+let scanTokenExpiresAt = Number((scanToken.split('.').pop() || '0'));
 const SCAN_TOKEN_LIMIT = 5;
+function createScanToken() {
+  const bytes = new Uint8Array(18);
+  if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+  else bytes.forEach((_, i) => bytes[i] = Math.floor(Math.random() * 256));
+  const randomPart = Array.from(bytes).map(v => v.toString(16).padStart(2, '0')).join('');
+  const expiresAt = Date.now() + (5 * 60 * 1000);
+  return { value: randomPart + '.' + expiresAt, expiresAt };
+}
+function attachNewScanTokenToUrl() {
+  const nextParams = new URLSearchParams(params);
+  nextParams.set('token', scanToken);
+  const host = parent !== window ? parent : window;
+  const baseHash = (host.location.hash || '#checkin').split('?')[0] || '#checkin';
+  const nextHash = baseHash + '?' + nextParams.toString();
+  try { host.history.replaceState(null, '', nextHash); }
+  catch (_) { try { host.location.hash = nextHash; } catch (_) {} }
+}
+if (!scanToken) {
+  const fresh = createScanToken();
+  scanToken = fresh.value;
+  scanTokenExpiresAt = fresh.expiresAt;
+  attachNewScanTokenToUrl();
+}
 function scanTokenIsValid() {
   return !!scanToken && Number.isFinite(scanTokenExpiresAt) && scanTokenExpiresAt > Date.now();
 }
 async function getScanTokenUsage(type) {
-  if (!scanTokenIsValid()) throw new Error('Token หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  if (!scanTokenIsValid()) throw new Error('ลิงก์นี้หมดอายุ กรุณาสแกนใหม่');
   const snap = await getDocs(query(collection(db, COL.REQUESTS), where('scanToken', '==', scanToken)));
   return snap.docs.filter(d => {
     const row = d.data();
@@ -328,12 +351,12 @@ async function getScanTokenUsage(type) {
   }).length;
 }
 async function ensureScanTokenCapacity(type, amount = 1) {
-  if (!scanTokenIsValid()) throw new Error('ลิงก์หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  if (!scanTokenIsValid()) throw new Error('ลิงก์นี้หมดอายุ กรุณาสแกนใหม่');
   const used = await getScanTokenUsage(type);
   if (used + amount > SCAN_TOKEN_LIMIT) {
     throw new Error(type === 'teacher'
-      ? 'Token นี้ใช้รับลิงก์ครูครบ 5 คนแล้ว กรุณาสแกน QR/รับลิงก์ใหม่'
-      : 'Token นี้ใช้เลือกนักเรียนครบ 5 คนแล้ว กรุณาสแกน QR ใหม่');
+      ? 'ลิงก์นี้หมดอายุ กรุณาสแกนใหม่'
+      : 'ลิงก์นี้หมดอายุ กรุณาสแกนใหม่');
   }
 }
 let pointData = null;`
@@ -345,7 +368,7 @@ let pointData = null;`
     `async function loadPoint(){
   await ensureAnonymous(auth);
   if(!scanTokenIsValid()){
-    document.getElementById('not-found').textContent = 'ลิงก์ QR หมดอายุหรือไม่มี Token — กรุณาสแกน QR ใหม่';
+    document.getElementById('not-found').textContent = 'ลิงก์นี้หมดอายุ กรุณาสแกนใหม่';
     show('not-found');
     return false;
   }
@@ -389,22 +412,30 @@ function addScanTokenToUser(page, key) {
   if (key !== 'user') return page;
   page = page.replace(
     `function extractPoint(raw){ try{ const u=new URL(raw,location.href); return u.searchParams.get('point')||u.searchParams.get('p'); }catch(e){ return null; } }`,
-    `function extractScanInfo(raw){
+    `function createUserScanToken(){
+  const bytes = new Uint8Array(18);
+  if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+  else bytes.forEach((_, i) => bytes[i] = Math.floor(Math.random() * 256));
+  const randomPart = Array.from(bytes).map(v => v.toString(16).padStart(2, '0')).join('');
+  return randomPart + '.' + (Date.now() + (5 * 60 * 1000));
+}
+function extractScanInfo(raw){
   try{
     const u = new URL(String(raw || ''), location.href);
     const direct = new URLSearchParams(u.search || '');
     const hashQuery = new URLSearchParams((u.hash || '').split('?')[1] || '');
     const get = key => direct.get(key) || hashQuery.get(key) || '';
-    return { pointCode: get('point') || get('p'), token: get('token') };
+    const existingToken = get('token');
+    return { pointCode: get('point') || get('p'), token: existingToken || createUserScanToken() };
   }catch(e){ return { pointCode: '', token: '' }; }
 }
 function userScanTokenExpiry(token){ return Number((String(token || '').split('.').pop() || '0')); }
 function userScanTokenIsValid(token){ const expiresAt = userScanTokenExpiry(token); return !!token && Number.isFinite(expiresAt) && expiresAt > Date.now(); }
 async function ensureUserScanTokenCapacity(token, type='student'){
-  if(!userScanTokenIsValid(token)) throw new Error('ลิงก์หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  if(!userScanTokenIsValid(token)) throw new Error('ลิงก์นี้หมดอายุ กรุณาสแกนใหม่');
   const snap = await getDocs(query(collection(db, COL.REQUESTS), where('scanToken','==',token)));
   const used = snap.docs.filter(d => (d.data().scanRecipientType || d.data().recipientType || 'student') === type).length;
-  if(used >= 5) throw new Error('Token นี้ใช้ครบ 5 คนแล้ว กรุณาสแกน QR/รับลิงก์ใหม่');
+  if(used >= 5) throw new Error('ลิงก์นี้หมดอายุ กรุณาสแกนใหม่');
   return userScanTokenExpiry(token);
 }`
   );
@@ -596,14 +627,14 @@ function getTeacherScanToken(){
   const p = teacherSelectParams();
   const token = p.get('token') || '';
   const expiresAt = Number((token.split('.').pop() || '0'));
-  if(!token || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('ลิงก์หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  if(!token || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('ลิงก์นี้หมดอายุ กรุณาสแกนใหม่');
   return { token, expiresAt };
 }
 async function ensureTeacherScanCapacity(type, amount){
   const info = getTeacherScanToken();
   const snap = await getDocs(query(collection(db, COL.REQUESTS), where('scanToken','==',info.token)));
   const used = snap.docs.filter(d => (d.data().scanRecipientType || d.data().recipientType || 'student') === type).length;
-  if(used + amount > 5) throw new Error(type === 'teacher' ? 'ลิงก์นี้รับครูครบ 5 คนแล้ว กรุณาสแกน QR/รับลิงก์ใหม่' : 'ลิงก์นี้เลือกนักเรียนครบ 5 คนแล้ว กรุณาสแกน QR ใหม่');
+  if(used + amount > 5) throw new Error(type === 'teacher' ? 'ลิงก์นี้หมดอายุ กรุณาสแกนใหม่' : 'ลิงก์นี้หมดอายุ กรุณาสแกนใหม่');
   return info;
 }
 document.getElementById('teacher-student-submit').onclick = async () => {
