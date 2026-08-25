@@ -1,7 +1,3 @@
-
-
-
-
 <!doctype html>
 <html lang="th">
 <head>
@@ -300,6 +296,10 @@ async function clearNamedData(name, label, buttonId) {
 }`
   );
   page = page.replace(
+    `async function clearNamedData(name,label){ if(!confirm('ยืนยันล้าง'+label+'ทั้งหมดหรือไม่? การดำเนินการนี้ย้อนกลับไม่ได้')) return; try { await deleteCollection(name); alert('ล้าง'+label+'ทั้งหมดแล้ว'); } catch(e){ alert('ล้างข้อมูลไม่สำเร็จ: '+(e.message||e.code)); } }`,
+    ``
+  );
+  page = page.replace(
     `document.getElementById('clear-participants').onclick = () => clearNamedData(COL.PARTICIPANTS,'ผู้เข้าร่วม');
 document.getElementById('clear-requests').onclick = () => clearNamedData(COL.REQUESTS,'คำขอ');`,
     `document.getElementById('clear-participants').onclick = () => clearNamedData(COL.PARTICIPANTS, 'ผู้เข้าร่วม', 'clear-participants');
@@ -307,12 +307,58 @@ document.getElementById('clear-requests').onclick = () => clearNamedData(COL.REQ
   );
   return page;
 }
+function fixTeacherStudentModal(page, key) {
+  if (key !== 'teacher') return page;
+  // Keep the student details dialog centered on phones instead of opening as a bottom sheet.
+  return page
+    .replace(
+      'id="modal" class="hidden fixed inset-0 bg-slate-900/50 flex items-end md:items-center justify-center z-50"',
+      'id="modal" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4"'
+    )
+    .replace(
+      'class="bg-white border-2 border-slate-900 rounded-t-2xl md:rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto p-5"',
+      'class="bg-white border-2 border-slate-900 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5"'
+    );
+}
+function fixTeacherStudentSeparation(page, key) {
+  if (key !== 'teacher') return page;
+  return page
+    .replace(
+      `async function submitRequestForParticipantAtPoint(participant, point){`,
+      `async function submitRequestForParticipantAtPoint(participant, point, recipientType='student'){`
+    )
+    .replace(
+      `approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'' });`,
+      `approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType });`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(p, pendingPoint);`,
+      `await submitRequestForParticipantAtPoint(p, pendingPoint, 'teacher');`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(s, pendingPoint);`,
+      `await submitRequestForParticipantAtPoint(s, pendingPoint, 'student');`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(selectedStudent, point);`,
+      `await submitRequestForParticipantAtPoint(selectedStudent, point, 'student');`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(p, point);`,
+      `await submitRequestForParticipantAtPoint(p, point, 'teacher');`
+    )
+    .replace(
+      `requests=[];snap.forEach(d=>requests.push({id:d.id,...d.data()}));`,
+      `requests=[];snap.forEach(d=>{const r={id:d.id,...d.data()};if(r.participantPhone!==teacherPhone&&r.recipientType!=='teacher')requests.push(r);});`
+    );
+}
+
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key);
+  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
