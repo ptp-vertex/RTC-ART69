@@ -1422,6 +1422,8 @@ function replaceEmojiWithIcons(page) {
   if (!page.includes('art2569-icon-style')) page = page.replace('</head>', css + '</head>');
   page = page.replaceAll("h.textContent=reg?'🧑‍💼 เจ้าหน้าที่จุดลงทะเบียน':'🧰 เจ้าหน้าที่จุดเวิร์คช็อป'", "h.textContent=reg?'เจ้าหน้าที่จุดลงทะเบียน':'เจ้าหน้าที่จุดเวิร์คช็อป'");
   page = page.replaceAll("textContent = '📞 '+teacherPhone", "textContent = 'โทรศัพท์: '+teacherPhone");
+  page = page.replaceAll("textContent = teacherPhone ? '📞 '+teacherPhone : '';", "textContent = teacherPhone ? 'โทรศัพท์: '+teacherPhone : '';");
+  page = page.replaceAll("textContent=teacherPhone ? '📞 '+teacherPhone : '';", "textContent=teacherPhone ? 'โทรศัพท์: '+teacherPhone : '';");
   page = page.replaceAll("msg.textContent = 'บันทึกแล้ว ✅'", "msg.textContent = 'บันทึกแล้ว'");
   page = page.replaceAll("status.textContent = 'แสดงตัวอย่างแล้ว ✅ รูปจะถูกอัปโหลดพร้อมบันทึกจุดนี้'", "status.textContent = 'แสดงตัวอย่างแล้ว รูปจะถูกอัปโหลดพร้อมบันทึกจุดนี้'");
   page = page.replaceAll('placeholder="🔍 ', 'placeholder="');
