@@ -10,9 +10,9 @@
 
 <title>ART2569 — ระบบรวมทุกหน้า</title>
 <style>
-html, body { margin:0; width:100%; height:100%; background:#f8fafc; }
-#app { width:100%; height:100%; }
-#view { display:block; border:0; width:100%; height:100%; min-height:100vh; }
+html, body { margin:0; width:100%; min-height:100%; height:auto; background:#f8fafc; overflow-x:hidden; overflow-y:auto; }
+#app { width:100%; min-height:100dvh; height:auto; }
+#view { display:block; border:0; width:100%; height:100dvh; min-height:0; }
 </style>
 <style id="art2569-outer-zoom-lock">
 html,body,#app,#view{touch-action:manipulation;-ms-touch-action:manipulation;-webkit-text-size-adjust:100%;}
@@ -1714,6 +1714,26 @@ import { db, COL, collection, getDocs } from '${moduleUrl}';
   return page.replace('</body>', schoolScript + '</body>');
 }
 
+let viewHeightTimer = null;
+function syncViewHeight() {
+  if (!view) return;
+  const viewportHeight = Math.max(1, Math.ceil(window.visualViewport?.height || window.innerHeight || 1));
+  view.style.height = viewportHeight + 'px';
+  clearTimeout(viewHeightTimer);
+  viewHeightTimer = setTimeout(() => {
+    const doc = view.contentDocument;
+    if (!doc || !doc.documentElement || !doc.body) return;
+    const contentHeight = Math.max(doc.documentElement.scrollHeight, doc.body.scrollHeight, doc.documentElement.offsetHeight, doc.body.offsetHeight);
+    view.style.height = Math.max(viewportHeight, contentHeight) + 'px';
+    if (!doc.__art2569MutationObserver && typeof MutationObserver !== 'undefined') {
+      const schedule = () => { clearTimeout(viewHeightTimer); viewHeightTimer = setTimeout(syncViewHeight, 40); };
+      const mutationObserver = new MutationObserver(schedule);
+      mutationObserver.observe(doc.body, { childList:true, subtree:true, attributes:true });
+      doc.__art2569MutationObserver = mutationObserver;
+    }
+  }, 40);
+}
+
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
@@ -1751,6 +1771,9 @@ function route() {
   view.srcdoc = routedPage;
   document.title = `ART2569 — ${key === 'teacherregister' ? 'ลงทะเบียนครู' : key}`;
 }
+view.addEventListener('load', () => setTimeout(syncViewHeight, 0));
+window.addEventListener('resize', syncViewHeight, { passive:true });
+window.visualViewport?.addEventListener('resize', syncViewHeight, { passive:true });
 window.addEventListener('hashchange', route);
 route();
 
