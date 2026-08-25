@@ -166,6 +166,184 @@ function addCheckinSuccessRedirect(page, key) {
   );
   return page;
 }
+function addScanTokenToAdmin(page, key) {
+  if (key !== 'admin') return page;
+  page = page.replace(
+    `let allPoints = [], allStaff = [], allParticipants = [], allRequests = [];`,
+    `let allPoints = [], allStaff = [], allParticipants = [], allRequests = [];
+let scanTokens = new Map();
+function makeScanToken() {
+  const bytes = new Uint8Array(18);
+  if (window.crypto && window.crypto.getRandomValues) window.crypto.getRandomValues(bytes);
+  else bytes.forEach((_, i) => bytes[i] = Math.floor(Math.random() * 256));
+  const randomPart = Array.from(bytes).map(v => v.toString(16).padStart(2, '0')).join('');
+  const expiresAt = Date.now() + (5 * 60 * 1000);
+  return { value: randomPart + '.' + expiresAt, expiresAt };
+}
+function getScanTokenForPoint(code) {
+  const old = scanTokens.get(code);
+  if (old && old.expiresAt > Date.now()) return old.value;
+  const next = makeScanToken();
+  scanTokens.set(code, next);
+  return next.value;
+}
+let scanTokenRefreshTimer = null;
+function startScanTokenRefresh(){
+  if(scanTokenRefreshTimer) clearInterval(scanTokenRefreshTimer);
+  scanTokenRefreshTimer = setInterval(() => {
+    if(!allPoints.length) return;
+    const expired = allPoints.some(p => !scanTokens.get(p.code) || scanTokens.get(p.code).expiresAt <= Date.now());
+    if(expired) renderPoints();
+  }, 30000);
+}`
+  );
+  page = page.replace(
+    `const url = siteBase + '#checkin?point=' + encodeURIComponent(p.code);`,
+    `const scanToken = getScanTokenForPoint(p.code);
+    const url = siteBase + '#checkin?point=' + encodeURIComponent(p.code) + '&token=' + encodeURIComponent(scanToken);`
+  );
+  page = page.replace(
+    `    renderPoints();
+    renderStaffPointCheckboxes();`,
+    `    renderPoints();
+    startScanTokenRefresh();
+    renderStaffPointCheckboxes();`
+  );
+  page = page.replace(
+    `  box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {`,
+    `  box.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {`
+  );
+  return page;
+}
+
+function addScanTokenToCheckin(page, key) {
+  if (key !== 'checkin') return page;
+  page = page.replace(
+    `const params = new URLSearchParams(parent.location.hash.split("?")[1] || "");
+const pointCode = params.get('point') || params.get('p') || '';
+let pointData = null;`,
+    `const params = new URLSearchParams(parent.location.hash.split("?")[1] || "");
+const pointCode = params.get('point') || params.get('p') || '';
+const scanToken = params.get('token') || '';
+const scanTokenExpiresAt = Number((scanToken.split('.').pop() || '0'));
+const SCAN_TOKEN_LIMIT = 5;
+function scanTokenIsValid() {
+  return !!scanToken && Number.isFinite(scanTokenExpiresAt) && scanTokenExpiresAt > Date.now();
+}
+async function getScanTokenUsage(type) {
+  if (!scanTokenIsValid()) throw new Error('Token หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  const snap = await getDocs(query(collection(db, COL.REQUESTS), where('scanToken', '==', scanToken)));
+  return snap.docs.filter(d => {
+    const row = d.data();
+    return (row.scanRecipientType || row.recipientType || 'student') === type;
+  }).length;
+}
+async function ensureScanTokenCapacity(type, amount = 1) {
+  if (!scanTokenIsValid()) throw new Error('ลิงก์หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  const used = await getScanTokenUsage(type);
+  if (used + amount > SCAN_TOKEN_LIMIT) {
+    throw new Error(type === 'teacher'
+      ? 'Token นี้ใช้รับลิงก์ครูครบ 5 คนแล้ว กรุณาสแกน QR/รับลิงก์ใหม่'
+      : 'Token นี้ใช้เลือกนักเรียนครบ 5 คนแล้ว กรุณาสแกน QR ใหม่');
+  }
+}
+let pointData = null;`
+  );
+  page = page.replace(
+    `async function loadPoint(){
+  await ensureAnonymous(auth);
+  if(!pointCode){ show('not-found'); return false; }`,
+    `async function loadPoint(){
+  await ensureAnonymous(auth);
+  if(!scanTokenIsValid()){
+    document.getElementById('not-found').textContent = 'ลิงก์ QR หมดอายุหรือไม่มี Token — กรุณาสแกน QR ใหม่';
+    show('not-found');
+    return false;
+  }
+  if(!pointCode){ show('not-found'); return false; }`
+  );
+  page = page.replace(
+    `    await addDoc(collection(db, COL.REQUESTS), {
+      participantId: currentParticipant.id,
+      participantName: currentParticipant.name,
+      participantPhone: currentParticipant.phone,
+      participantSchool: currentParticipant.school || '',
+      pointId: pointData.id,
+      pointName: pointData.name,
+      status: 'pending',
+      requestedAt: serverTimestamp(),
+      approvedBy: null,
+      approvedAt: null
+    });`,
+    `    await ensureScanTokenCapacity('student', 1);
+    await addDoc(collection(db, COL.REQUESTS), {
+      participantId: currentParticipant.id,
+      participantName: currentParticipant.name,
+      participantPhone: currentParticipant.phone,
+      participantSchool: currentParticipant.school || '',
+      pointId: pointData.id,
+      pointName: pointData.name,
+      status: 'pending',
+      requestedAt: serverTimestamp(),
+      approvedBy: null,
+      approvedAt: null,
+      recipientType: 'student',
+      scanRecipientType: 'student',
+      scanToken,
+      scanTokenExpiresAt
+    });`
+  );
+  return page;
+}
+
+function addScanTokenToUser(page, key) {
+  if (key !== 'user') return page;
+  page = page.replace(
+    `function extractPoint(raw){ try{ const u=new URL(raw,location.href); return u.searchParams.get('point')||u.searchParams.get('p'); }catch(e){ return null; } }`,
+    `function extractScanInfo(raw){
+  try{
+    const u = new URL(String(raw || ''), location.href);
+    const direct = new URLSearchParams(u.search || '');
+    const hashQuery = new URLSearchParams((u.hash || '').split('?')[1] || '');
+    const get = key => direct.get(key) || hashQuery.get(key) || '';
+    return { pointCode: get('point') || get('p'), token: get('token') };
+  }catch(e){ return { pointCode: '', token: '' }; }
+}
+function userScanTokenExpiry(token){ return Number((String(token || '').split('.').pop() || '0')); }
+function userScanTokenIsValid(token){ const expiresAt = userScanTokenExpiry(token); return !!token && Number.isFinite(expiresAt) && expiresAt > Date.now(); }
+async function ensureUserScanTokenCapacity(token, type='student'){
+  if(!userScanTokenIsValid(token)) throw new Error('ลิงก์หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  const snap = await getDocs(query(collection(db, COL.REQUESTS), where('scanToken','==',token)));
+  const used = snap.docs.filter(d => (d.data().scanRecipientType || d.data().recipientType || 'student') === type).length;
+  if(used >= 5) throw new Error('Token นี้ใช้ครบ 5 คนแล้ว กรุณาสแกน QR/รับลิงก์ใหม่');
+  return userScanTokenExpiry(token);
+}`
+  );
+  page = page.replace(
+    `async function submitRequestForParticipantAtPoint(participant, point){
+  const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',participant.id), where('pointId','==',point.id)));
+  if(!dup.empty) throw new Error('เคยขอรับเกียรติบัตรจากจุดนี้แล้ว');
+  await addDoc(collection(db, COL.REQUESTS), { participantId:participant.id, participantName:participant.name, participantPhone:participant.phone, participantSchool:participant.school||'', pointId:point.id, pointName:point.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null });
+}`,
+    `async function submitRequestForParticipantAtPoint(participant, point, scanInfo){
+  const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',participant.id), where('pointId','==',point.id)));
+  if(!dup.empty) throw new Error('เคยขอรับเกียรติบัตรจากจุดนี้แล้ว');
+  const scanTokenExpiresAt = await ensureUserScanTokenCapacity(scanInfo.token, 'student');
+  await addDoc(collection(db, COL.REQUESTS), { participantId:participant.id, participantName:participant.name, participantPhone:participant.phone, participantSchool:participant.school||'', pointId:point.id, pointName:point.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null, recipientType:'student', scanRecipientType:'student', scanToken:scanInfo.token, scanTokenExpiresAt });
+}`
+  );
+  page = page.replace(
+    `    const pointCode = extractPoint(raw); if(!pointCode) throw new Error('ไม่พบรหัสจุดใน QR');`,
+    `    const scanInfo = extractScanInfo(raw);
+    const pointCode = scanInfo.pointCode; if(!pointCode) throw new Error('ไม่พบรหัสจุดใน QR');`
+  );
+  page = page.replace(
+    `    await submitRequestForParticipantAtPoint(currentParticipant, point);`,
+    `    await submitRequestForParticipantAtPoint(currentParticipant, point, scanInfo);`
+  );
+  return page;
+}
+
 function addTeacherPhoneGuard(page, key) {
   if (key !== 'checkin') return page;
   page = page.replace(
@@ -325,18 +503,34 @@ function renderTeacherStudentPickList(){
 
   // ปุ่ม "รับให้นักเรียนที่เลือก" และ "รับเกียรติบัตรครู" + ปุ่มเปลี่ยนเบอร์
   const teacherActionScript = `
+function getTeacherScanToken(){
+  const p = teacherSelectParams();
+  const token = p.get('token') || '';
+  const expiresAt = Number((token.split('.').pop() || '0'));
+  if(!token || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('ลิงก์หมดอายุแล้ว กรุณาสแกน QR ใหม่');
+  return { token, expiresAt };
+}
+async function ensureTeacherScanCapacity(type, amount){
+  const info = getTeacherScanToken();
+  const snap = await getDocs(query(collection(db, COL.REQUESTS), where('scanToken','==',info.token)));
+  const used = snap.docs.filter(d => (d.data().scanRecipientType || d.data().recipientType || 'student') === type).length;
+  if(used + amount > 5) throw new Error(type === 'teacher' ? 'ลิงก์นี้รับครูครบ 5 คนแล้ว กรุณาสแกน QR/รับลิงก์ใหม่' : 'ลิงก์นี้เลือกนักเรียนครบ 5 คนแล้ว กรุณาสแกน QR ใหม่');
+  return info;
+}
 document.getElementById('teacher-student-submit').onclick = async () => {
   const msg = document.getElementById('teacher-student-select-msg');
   if(!teacherSelectedIds.size){ msg.innerHTML = '<span class="text-red-500">กรุณาเลือกนักเรียนอย่างน้อย 1 คน</span>'; return; }
-  msg.textContent = 'กำลังส่งคำขอ...';
+  msg.textContent = 'กำลังตรวจสอบ Token และส่งคำขอ...';
   let ok = 0, skip = 0;
+  let tokenInfo;
+  try { tokenInfo = await ensureTeacherScanCapacity('student', teacherSelectedIds.size); } catch(err) { msg.innerHTML = '<span class="text-red-500">'+(err.message||'ลิงก์ใช้ไม่ได้')+'</span>'; return; }
   for (const id of teacherSelectedIds) {
     const student = teacherSelectStudents.find(s => s.id === id);
     if (!student) continue;
     try {
       const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',student.id), where('pointId','==',pointData.id)));
       if (!dup.empty) { skip++; continue; }
-      await addDoc(collection(db, COL.REQUESTS), { participantId:student.id, participantName:student.name, participantPhone:student.phone, participantSchool:student.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType:'student' });
+      await addDoc(collection(db, COL.REQUESTS), { participantId:student.id, participantName:student.name, participantPhone:student.phone, participantSchool:student.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType:'student', scanRecipientType:'student', scanToken:tokenInfo.token, scanTokenExpiresAt:tokenInfo.expiresAt });
       ok++;
     } catch(_) { skip++; }
   }
@@ -346,8 +540,9 @@ document.getElementById('teacher-student-submit').onclick = async () => {
 };
 document.getElementById('teacher-self-submit').onclick = async () => {
   const msg = document.getElementById('teacher-self-select-msg');
-  msg.textContent = 'กำลังส่งคำขอ...';
+  msg.textContent = 'กำลังตรวจสอบ Token และส่งคำขอ...';
   try {
+    const tokenInfo = await ensureTeacherScanCapacity('teacher', 1);
     let teacherParticipant = await findParticipantByPhone(currentTeacherPhone);
     if (!teacherParticipant) {
       const ref = await addDoc(collection(db, COL.PARTICIPANTS), { name: currentTeacherName || currentTeacherPhone, phone: currentTeacherPhone, school: currentTeacherSchool || '', note:'ครู', registeredBy:'teacher-self', createdAt: serverTimestamp() });
@@ -355,7 +550,7 @@ document.getElementById('teacher-self-submit').onclick = async () => {
     }
     const dup = await getDocs(query(collection(db, COL.REQUESTS), where('participantId','==',teacherParticipant.id), where('pointId','==',pointData.id)));
     if (dup.empty) {
-      await addDoc(collection(db, COL.REQUESTS), { participantId:teacherParticipant.id, participantName:teacherParticipant.name, participantPhone:teacherParticipant.phone, participantSchool:teacherParticipant.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType:'teacher' });
+      await addDoc(collection(db, COL.REQUESTS), { participantId:teacherParticipant.id, participantName:teacherParticipant.name, participantPhone:teacherParticipant.phone, participantSchool:teacherParticipant.school||'', pointId:pointData.id, pointName:pointData.name, status:'pending', requestedAt:serverTimestamp(), approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType:'teacher', scanRecipientType:'teacher', scanToken:tokenInfo.token, scanTokenExpiresAt:tokenInfo.expiresAt });
     }
     msg.innerHTML = '<span class="text-teal-600">รับสำเร็จ! กำลังไปหน้าครู...</span>';
     localStorage.setItem('art2569_teacher_phone', currentTeacherPhone);
@@ -608,7 +803,20 @@ function route() {
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = addStatusColumnToApproved(fixTeacherDashboardSeparation(fixAdminClearActions(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key), key), key);
+  let routedPage = rewriteStorageImagesToFirestore(decode(pages[key]), key);
+  routedPage = addCheckinSuccessRedirect(routedPage, key);
+  routedPage = addTeacherStudentRegistration(routedPage, key);
+  routedPage = addTeacherPhoneGuard(routedPage, key);
+  routedPage = addScanTokenToCheckin(routedPage, key);
+  routedPage = addScanTokenToUser(routedPage, key);
+  routedPage = fixTeacherQrPointParsing(routedPage, key);
+  routedPage = fixTeacherStudentModal(routedPage, key);
+  routedPage = fixTeacherStudentSeparation(routedPage, key);
+  routedPage = fixAdminClearActions(routedPage, key);
+  routedPage = fixTeacherDashboardSeparation(routedPage, key);
+  routedPage = addScanTokenToAdmin(routedPage, key);
+  routedPage = addStatusColumnToApproved(routedPage, key);
+  view.srcdoc = routedPage;
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
