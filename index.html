@@ -166,6 +166,95 @@ function addCheckinSuccessRedirect(page, key) {
   );
   return page;
 }
+function addTeacherRegistrationLink(page, key) {
+  if (key !== 'teacher') return page;
+  const linkMarkup = '<p class="text-xs text-slate-400 mt-3 text-center">ยังไม่มีบัญชีครู? <a href="#teacherregister" class="underline text-sky-600 font-semibold">ลงทะเบียนครู</a></p>';
+  const marker = '<p id="login-msg" class="text-xs text-red-500 mt-2"></p>';
+  return page.includes(marker) ? page.replace(marker, marker + linkMarkup) : page;
+}
+
+function addTeacherHomeRegistrationLink(page, key) {
+  if (key !== 'index') return page;
+  const marker = '<a href="#user?mode=register" class="btn bg-teal-400 text-center py-3 font-semibold">ลงทะเบียนผู้ใช้งานใหม่</a>';
+  const links = marker + '<a href="#teacher" class="btn bg-sky-400 text-center py-3 font-semibold">เข้าสู่ระบบครู</a>';
+  return page.includes(marker) ? page.replace(marker, links) : page;
+}
+
+function addTeacherRegistrationPage(page, key) {
+  if (key !== 'teacherregister') return page;
+  page = page.replace('<title>เจ้าหน้าที่จุดลงทะเบียน / ประจำจุด | ระบบเกียรติบัตร</title>', '<title>ลงทะเบียนครู | ระบบเกียรติบัตร</title>');
+  page = page.replace('<h1 class="text-xl font-bold text-amber-600">🧑‍💼 เจ้าหน้าที่จุดลงทะเบียน</h1>', '<h1 class="text-xl font-bold text-sky-600">🧑‍🏫 ลงทะเบียนครู</h1>');
+  page = page.replace('<p class="text-xs text-slate-400">ลงทะเบียนครูและนักเรียนแทนผู้เข้าร่วม โดยไม่ต้องดูแลคำขอเกียรติบัตรของจุดเวิร์คช็อป</p>', '<p class="text-xs text-slate-400">สร้างบัญชีครูด้วยเบอร์โทรศัพท์ เมื่อลงทะเบียนสำเร็จจะเข้าสู่หน้าครูทันที</p>');
+  page = page.replace('</style>', '</style><style id="teacher-register-only-style">#login-box{display:none!important}#dash-box{display:block!important}#dash-box> *{display:none!important}#staff-teacher-card{display:block!important;max-width:100%;margin-top:0!important}#staff-teacher-card:before{content:"ลงทะเบียนครู";display:block;font-size:1.05rem;font-weight:600;margin-bottom:.35rem;color:#0369a1}#staff-teacher-card>p:first-of-type{display:none!important}#staff-teacher-card form{display:grid!important}</style>');
+  page = page.replace('<div id="staff-teacher-card" class="card p-4 mb-4 hidden">', '<div id="staff-teacher-card" class="card p-4 mb-4"><a href="#teacher" class="inline-block text-xs underline text-slate-500 mb-3">← กลับหน้าเข้าสู่ระบบครู</a>');
+  page = page.replace('</body>', '<script>(function(){var h=document.querySelector(\'h1\');var sub=h&&h.nextElementSibling;if(h)h.textContent=\'🧑‍🏫 ลงทะเบียนครู\';if(sub)sub.textContent=\'สร้างบัญชีครูด้วยเบอร์โทรศัพท์ เมื่อลงทะเบียนสำเร็จจะเข้าสู่หน้าครูทันที\';})();' + '<' + '/script></body>');
+  const teacherRegistrationScript = `
+// Self-service teacher registration page: create teacher account, then sign in immediately.
+const teacherRegisterForm = document.getElementById('staff-teacher-form');
+if (teacherRegisterForm) {
+  teacherRegisterForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById('staff-teacher-msg');
+    const rawName = document.getElementById('stc-name').value.trim();
+    const prefix = document.getElementById('stc-prefix').value;
+    const prefixOther = document.getElementById('stc-prefix-other').value.trim();
+    const name = [prefix === 'อื่นๆโปรดระบุ' ? prefixOther : prefix, rawName].filter(Boolean).join(' ');
+    const phone = document.getElementById('stc-email').value.trim();
+    const password = document.getElementById('stc-password').value;
+    const school = document.getElementById('stc-school').value.trim();
+    if (!prefix || (prefix === 'อื่นๆโปรดระบุ' && !prefixOther) || !rawName || !phone || !password || !school) {
+      msg.innerHTML = '<span class="text-red-500">กรุณากรอกข้อมูลครูให้ครบ</span>';
+      return;
+    }
+    if (password.length < 6) {
+      msg.innerHTML = '<span class="text-red-500">รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร</span>';
+      return;
+    }
+    msg.textContent = 'กำลังสร้างบัญชีครู...';
+    try {
+      const staffRef = doc(db, COL.STAFF, phoneKey(phone));
+      const existingStaff = await getDoc(staffRef);
+      if (existingStaff.exists()) {
+        msg.innerHTML = '<span class="text-amber-600">เบอร์นี้มีบัญชีในระบบแล้ว กรุณาเข้าสู่ระบบครู</span>';
+        return;
+      }
+      const secondaryAuth = getSecondaryAuth();
+      try {
+        await createUserWithEmailAndPassword(secondaryAuth, phoneAuthEmail(phone), password);
+      } catch (authErr) {
+        if (authErr?.code !== 'auth/email-already-in-use') throw authErr;
+        try {
+          await signInWithEmailAndPassword(secondaryAuth, phoneAuthEmail(phone), password);
+        } catch (_) {
+          throw new Error('เบอร์นี้มีบัญชีเข้าสู่ระบบอยู่แล้ว แต่รหัสผ่านไม่ตรงกัน กรุณาใช้เบอร์อื่นหรือเข้าสู่ระบบด้วยบัญชีเดิม');
+        }
+      }
+      await setDoc(staffRef, {
+        name, phone, role: 'teacher', pointIds: [], school, active: true,
+        selfRegistered: true, createdAt: serverTimestamp()
+      }, { merge: true });
+      msg.textContent = 'สร้างบัญชีสำเร็จ กำลังเข้าสู่หน้าครู...';
+      await signInWithEmailAndPassword(auth, phoneAuthEmail(phone), password);
+      localStorage.setItem('art2569_teacher_phone', phone);
+      setTimeout(() => {
+        if (parent !== window) parent.location.hash = 'teacher';
+        else location.hash = 'teacher';
+      }, 250);
+    } catch (err) {
+      const code = err?.code || '';
+      const message = code === 'auth/weak-password' ? 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร' : code === 'auth/invalid-phone-number' || code === 'auth/invalid-email' ? 'เบอร์โทรศัพท์ไม่ถูกต้อง' : code === 'auth/email-already-in-use' ? 'เบอร์นี้มีบัญชีเข้าสู่ระบบอยู่แล้ว กรุณาเข้าสู่หน้าครูด้วยรหัสผ่านเดิม' : (err.message || code || 'ไม่สามารถลงทะเบียนได้');
+      msg.innerHTML = '<span class="text-red-500">ลงทะเบียนไม่สำเร็จ: ' + message + '</span>';
+    }
+  };
+}
+`;
+  const moduleBoundary = '<' + '/script>\n<script>\n    document.addEventListener(\'click\', function(event) {';
+  if (page.includes(moduleBoundary)) {
+    page = page.replace(moduleBoundary, teacherRegistrationScript + '\n<' + '/script>\n<script>\n    document.addEventListener(\'click\', function(event) {');
+  }
+  return page;
+}
+
 function addScanTokenToAdmin(page, key) {
   if (key !== 'admin') return page;
   page = page.replace(
@@ -801,11 +890,17 @@ async function loadTeacherDirectory() {
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
-  const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
-  const key = pages[page] ? page : 'index';
-  let routedPage = rewriteStorageImagesToFirestore(decode(pages[key]), key);
+  const requestedPage = raw.split('?')[0] || 'index';
+  const sanitizedPage = requestedPage.replace(/[^a-z]/gi, '');
+  const page = isZero ? 'zero' : sanitizedPage;
+  const key = page === 'teacherregister' ? 'teacherregister' : (pages[page] ? page : 'index');
+  const sourceKey = key === 'teacherregister' ? 'registration' : key;
+  let routedPage = rewriteStorageImagesToFirestore(decode(pages[sourceKey]), sourceKey);
   routedPage = addCheckinSuccessRedirect(routedPage, key);
   routedPage = addTeacherStudentRegistration(routedPage, key);
+  routedPage = addTeacherRegistrationLink(routedPage, key);
+  routedPage = addTeacherHomeRegistrationLink(routedPage, key);
+  routedPage = addTeacherRegistrationPage(routedPage, key);
   routedPage = addTeacherPhoneGuard(routedPage, key);
   routedPage = addScanTokenToCheckin(routedPage, key);
   routedPage = addScanTokenToUser(routedPage, key);
@@ -817,7 +912,7 @@ function route() {
   routedPage = addScanTokenToAdmin(routedPage, key);
   routedPage = addStatusColumnToApproved(routedPage, key);
   view.srcdoc = routedPage;
-  document.title = `ART2569 — ${key}`;
+  document.title = `ART2569 — ${key === 'teacherregister' ? 'ลงทะเบียนครู' : key}`;
 }
 window.addEventListener('hashchange', route);
 route();
