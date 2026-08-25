@@ -1051,8 +1051,8 @@ function compactPrefixName(value) {
 }
 function recipientStatus(row) {
   if (row.recipientType === 'teacher') return 'ครู';
-  if (row.recipientType === 'student') return 'นักเรียน';
-  return teacherPhones.has(normalizePhone(row.participantPhone)) ? 'ครู' : 'นักเรียน';
+  if (row.recipientType === 'student') return 'ผู้เข้าร่วม';
+  return teacherPhones.has(normalizePhone(row.participantPhone)) ? 'ครู' : 'ผู้เข้าร่วม';
 }
 async function loadTeacherDirectory() {
   try {
