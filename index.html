@@ -268,6 +268,19 @@ async function resolveTeacherPointCode(raw){
   );
   return page;
 }
+function fixTeacherStudentModal(page, key) {
+  if (key !== 'teacher') return page;
+  // Keep the student details dialog centered on phones instead of opening as a bottom sheet.
+  return page
+    .replace(
+      'id="modal" class="hidden fixed inset-0 bg-slate-900/50 flex items-end md:items-center justify-center z-50"',
+      'id="modal" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4"'
+    )
+    .replace(
+      'class="bg-white border-2 border-slate-900 rounded-t-2xl md:rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto p-5"',
+      'class="bg-white border-2 border-slate-900 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5"'
+    );
+}
 function fixAdminClearActions(page, key) {
   if (key !== 'admin') return page;
   page = page.replace(
@@ -311,7 +324,7 @@ function route() {
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key);
+  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
