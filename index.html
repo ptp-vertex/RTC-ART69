@@ -1,6 +1,7 @@
 
 
 
+
 <!doctype html>
 <html lang="th">
 <head>
@@ -172,85 +173,25 @@ function addTeacherPhoneGuard(page, key) {
     'import { auth, db, COL, ensureAnonymous,',
     'import { auth, db, COL, phoneKey, phoneAuthEmail, ensureAnonymous,'
   );
-  page = page.replace(
-    '</body>',
-    `<div id="teacher-award-box" class="hidden card p-5 max-w-md mx-auto mb-6">
-  <p class="text-lg font-bold text-center mb-1">เลือกรับเกียรติบัตร</p>
-  <p id="teacher-award-point" class="text-sm text-slate-500 text-center mb-3"></p>
-  <div class="flex gap-2 mb-3">
-    <button id="teacher-award-student-tab" type="button" class="btn bg-sky-500 text-white flex-1 py-2 text-xs font-semibold">เกียรติบัตรนักเรียน</button>
-    <button id="teacher-award-teacher-tab" type="button" class="btn bg-white text-slate-700 flex-1 py-2 text-xs font-semibold">เกียรติบัตรครู</button>
-  </div>
-  <section id="teacher-award-student-panel">
-    <p class="text-xs text-slate-500 mb-2">เลือกนักเรียนได้สูงสุด 5 คน</p>
-    <div id="teacher-award-students" class="space-y-2"></div>
-    <button id="teacher-award-student-submit" type="button" class="btn bg-sky-500 text-white w-full py-2 mt-3 text-sm font-semibold">กดรับเกียรติบัตรนักเรียน</button>
-  </section>
-  <section id="teacher-award-teacher-panel" class="hidden">
-    <p id="teacher-award-teacher-name" class="text-sm text-center mb-3"></p>
-    <button id="teacher-award-teacher-submit" type="button" class="btn bg-pink-500 text-white w-full py-2 text-sm font-semibold">กดรับเกียรติบัตรครูทันที</button>
-  </section>
-  <p id="teacher-award-msg" class="text-xs mt-3"></p>
-</div></body>`
-  );
-  page = page.replace(
-    /<\/script>\s*(?=<div id="teacher-award-box")/,
-    `
-let teacherAward = null, teacherAwardStudents = [], teacherAwardSelected = [];
-function showTeacherAwardChoice(teacher){
-  teacherAward=teacher; hideAllSteps();
-  document.getElementById('teacher-award-point').textContent='ฐาน: '+(pointData?.name||'');
-  document.getElementById('teacher-award-teacher-name').textContent='ครู: '+(teacher.name||teacher.phone||'');
-  document.getElementById('teacher-award-box').classList.remove('hidden');
-  setTeacherAwardTab('students');
-  getDocs(query(collection(db,COL.PARTICIPANTS),where('school','==',teacher.school||''))).then(snap=>{
-    teacherAwardStudents=[];snap.forEach(d=>teacherAwardStudents.push({id:d.id,...d.data()}));
-    renderTeacherAwardStudents();
-  });
-}
-function setTeacherAwardTab(tab){
-  const t=tab==='teacher';
-  document.getElementById('teacher-award-student-panel').classList.toggle('hidden',t);
-  document.getElementById('teacher-award-teacher-panel').classList.toggle('hidden',!t);
-  document.getElementById('teacher-award-student-tab').className='btn flex-1 py-2 text-xs font-semibold '+(t?'bg-white text-slate-700':'bg-sky-500 text-white');
-  document.getElementById('teacher-award-teacher-tab').className='btn flex-1 py-2 text-xs font-semibold '+(t?'bg-pink-500 text-white':'bg-white text-slate-700');
-}
-function renderTeacherAwardStudents(){
-  const box=document.getElementById('teacher-award-students');
-  box.innerHTML=teacherAwardStudents.map(s=>'<label class="card p-2 flex items-center gap-2"><input type="checkbox" data-teacher-award-id="'+s.id+'" '+(teacherAwardSelected.includes(s.id)?'checked':'')+'><span class="text-sm flex-1">'+s.name+'</span><span class="text-xs text-slate-400">'+(s.phone||'')+'</span></label>').join('')||'<p class="text-xs text-slate-400 text-center py-3">ไม่พบนักเรียน</p>';
-  box.querySelectorAll('[data-teacher-award-id]').forEach(input=>input.onchange=()=>{
-    const id=input.getAttribute('data-teacher-award-id');
-    if(input.checked&&!teacherAwardSelected.includes(id)){if(teacherAwardSelected.length>=5){input.checked=false;return;}teacherAwardSelected.push(id);}
-    if(!input.checked)teacherAwardSelected=teacherAwardSelected.filter(x=>x!==id);
-  });
-}
-async function submitTeacherAward(p){
-  const dup=await getDocs(query(collection(db,COL.REQUESTS),where('participantId','==',p.id),where('pointId','==',pointData.id)));
-  if(!dup.empty)throw new Error('มีคำขอจากฐานนี้แล้ว: '+p.name);
-  await addDoc(collection(db,COL.REQUESTS),{participantId:p.id,participantName:p.name,participantPhone:p.phone||'',participantSchool:p.school||'',pointId:pointData.id,pointName:pointData.name,status:'pending',requestedAt:serverTimestamp(),approvedBy:null,approvedAt:null,recipientType:p.recipientType||'student'});
-}
-document.getElementById('teacher-award-student-tab').onclick=()=>setTeacherAwardTab('students');
-document.getElementById('teacher-award-teacher-tab').onclick=()=>setTeacherAwardTab('teacher');
-document.getElementById('teacher-award-student-submit').onclick=async()=>{
-  const msg=document.getElementById('teacher-award-msg'),picked=teacherAwardStudents.filter(s=>teacherAwardSelected.includes(s.id));
-  if(!picked.length){msg.textContent='กรุณาเลือกนักเรียนอย่างน้อย 1 คน';return;} msg.textContent='กำลังส่งคำขอ...';
-  try{await Promise.all(picked.map(s=>submitTeacherAward(s)));msg.textContent='รับเกียรติบัตรนักเรียนสำเร็จ';}catch(e){msg.textContent=e.message||'ส่งคำขอไม่สำเร็จ';}
-};
-document.getElementById('teacher-award-teacher-submit').onclick=async()=>{
-  const msg=document.getElementById('teacher-award-msg');msg.textContent='กำลังส่งคำขอ...';
-  try{const p={id:'teacher:'+phoneKey(teacherAward.phone),name:teacherAward.name||teacherAward.phone,phone:teacherAward.phone,school:teacherAward.school||'',recipientType:'teacher'};await submitTeacherAward(p);msg.textContent='รับเกียรติบัตรครูสำเร็จ';}catch(e){msg.textContent=e.message||'ส่งคำขอไม่สำเร็จ';}
-};
-</script>`
-  );
   const guardedLogin = `
   try {
     const staffSnap = await getDocs(query(collection(db, COL.STAFF), where('phone','==',phone)));
-    const staff = staffSnap.empty ? null : { phone, ...staffSnap.docs[0].data() };
+    const staff = staffSnap.empty ? null : staffSnap.docs[0].data();
+    const teacherWasLoggedInBefore = staff?.role === 'teacher' && (
+      auth.currentUser?.email === phoneAuthEmail(phone) ||
+      phoneKey(localStorage.getItem('art2569_teacher_phone') || '') === phoneKey(phone)
+    );
     if (staff?.role === 'teacher') {
-      showTeacherAwardChoice(staff);
-    } else {
-      await resolveIdentity(phone);
+      const notice = teacherWasLoggedInBefore
+        ? 'พบเบอร์ครูและกำลังเข้าสู่ระบบครูอัตโนมัติ\\nกรุณาเลือกเมนู “สแกนกิจกรรม” แล้วสแกน QR อีกครั้ง'
+        : 'เบอร์นี้เป็นบัญชีครู\\nกรุณาเข้าสู่ระบบหน้าครูก่อน แล้วเลือก “สแกนกิจกรรม” เพื่อสแกน QR อีกครั้ง';
+      localStorage.setItem('art2569_teacher_login_notice', notice);
+      alert(notice);
+      if (parent !== window) parent.location.hash = 'teacher';
+      else location.hash = 'teacher';
+      return;
     }
+    await resolveIdentity(phone);
   } catch(err){
     msg.innerHTML = '<span class="text-red-500">เข้าสู่ระบบไม่สำเร็จ: '+(err.message||err.code)+'</span>';
   }`;
@@ -266,11 +207,6 @@ document.getElementById('teacher-award-teacher-submit').onclick=async()=>{
 }
 function addTeacherReturnNotice(page, key) {
   if (key !== 'teacher') return page;
-  // Do not redirect or show an old automatic-login notice on the teacher page.
-  page = page.replace(
-    `const notice = localStorage.getItem('art2569_teacher_login_notice');`,
-    `const notice = null;`
-  );
   const noticeScript = '<scr' + 'ipt>' + `
 (function showTeacherReturnNotice(){
   const notice = localStorage.getItem('art2569_teacher_login_notice');
@@ -297,218 +233,41 @@ function fixTeacherQrPointParsing(page, key) {
     `function extractPoint(raw){
   try {
     const u = new URL(raw, location.href);
-    const direct = u.searchParams.get('point') || u.searchParams.get('p') ||
-      u.searchParams.get('pointCode') || u.searchParams.get('code');
+    const direct = u.searchParams.get('point') || u.searchParams.get('p');
     if (direct) return direct;
     const hashQuery = (u.hash || '').split('?')[1] || '';
     const hashParams = new URLSearchParams(hashQuery);
-    return hashParams.get('point') || hashParams.get('p') ||
-      hashParams.get('pointCode') || hashParams.get('code') || '';
+    return hashParams.get('point') || hashParams.get('p') || '';
   } catch (_) { return ''; }
 }
-async function resolveTeacherQrLink(raw){
-  const original = String(raw || '').trim();
-  if (!original) return { url: '', pointCode: '' };
+async function resolveTeacherPointCode(raw){
+  const direct = extractPoint(raw);
+  if (direct) return direct;
   let target;
-  try { target = new URL(original, location.href); } catch (_) { return { url: '', pointCode: '' }; }
-  const direct = extractPoint(target.href);
-  if (direct) return { url: target.href, pointCode: decodeURIComponent(direct) };
-  let resolvedUrl = target.href;
+  try { target = new URL(String(raw || '').trim(), location.href); } catch (_) { return ''; }
+  if (!/^https?:$/.test(target.protocol)) return '';
   try {
-    // เปิดลิงก์ Dynamic QR เพื่อให้บริการ redirect ไปยังลิงก์ปลายทางจริง
-    // แล้วจำลิงก์นั้นไว้ แทนการถือว่า payload ใน QR เป็นรหัสจุดเสมอ
+    // Follow the Dynamic QR redirect without navigating away from the teacher page.
     const response = await fetch(target.href, { redirect: 'follow', cache: 'no-store' });
-    resolvedUrl = response.url || resolvedUrl;
-    const finalCode = extractPoint(resolvedUrl);
-    if (finalCode) {
-      localStorage.setItem('art2569_teacher_last_qr_link', resolvedUrl);
-      return { url: resolvedUrl, pointCode: decodeURIComponent(finalCode) };
-    }
-    const html = await response.text();
-    const matches = html.match(/https?:[^"'&<>\\s]+/g) || [];
-    for (const candidate of matches) {
-      const nested = candidate.replace(/&amp;/g, '&');
-      const nestedCode = extractPoint(nested);
-      if (nestedCode) {
-        localStorage.setItem('art2569_teacher_last_qr_link', nested);
-        return { url: nested, pointCode: decodeURIComponent(nestedCode) };
-      }
-    }
+    const finalCode = extractPoint(response.url);
+    if (finalCode) return finalCode;
   } catch (_) {}
-  // รองรับลิงก์ Dynamic QR ที่ครอบลิงก์ปลายทางไว้ในพารามิเตอร์
+  // รองรับลิงก์ Dynamic QR ที่ส่ง URL ปลายทางมาในพารามิเตอร์
   for (const key of ['url','u','redirect','redirect_url','link','target']) {
     const nested = target.searchParams.get(key);
     if (nested) {
       const nestedCode = extractPoint(nested);
-      if (nestedCode) {
-        localStorage.setItem('art2569_teacher_last_qr_link', nested);
-        return { url: nested, pointCode: decodeURIComponent(nestedCode) };
-      }
+      if (nestedCode) return nestedCode;
     }
   }
-  return { url: resolvedUrl, pointCode: '' };
+  return '';
 }`
   );
   page = page.replace(
     `const pointCode=extractPoint(raw); if(!pointCode)throw new Error('ไม่พบรหัสจุดใน QR');`,
-    `const qrLink=await resolveTeacherQrLink(raw); const pointCode=qrLink.pointCode; if(!pointCode)throw new Error('เปิดลิงก์ Dynamic QR ไม่สำเร็จ หรือไม่พบลิงก์กิจกรรมปลายทาง');`
+    `const pointCode=await resolveTeacherPointCode(raw); if(!pointCode)throw new Error('ไม่พบจุด QR หรือไม่สามารถเปิดลิงก์ Dynamic QR ได้');`
   );
   return page;
-}
-function fixTeacherStudentModal(page, key) {
-  if (key !== 'teacher') return page;
-  // Keep the student details dialog centered on phones instead of opening as a bottom sheet.
-  return page
-    .replace(
-      'id="modal" class="hidden fixed inset-0 bg-slate-900/50 flex items-end md:items-center justify-center z-50"',
-      'id="modal" class="hidden fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 p-4"'
-    )
-    .replace(
-      'class="bg-white border-2 border-slate-900 rounded-t-2xl md:rounded-2xl w-full max-w-md max-h-[80vh] overflow-y-auto p-5"',
-      'class="bg-white border-2 border-slate-900 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5"'
-    );
-}
-function fixTeacherStudentSeparation(page, key) {
-  if (key !== 'teacher') return page;
-  return page
-    .replace(
-      `async function submitRequestForParticipantAtPoint(participant, point){`,
-      `async function submitRequestForParticipantAtPoint(participant, point, recipientType='student'){`
-    )
-    .replace(
-      `approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'' });`,
-      `approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType });`
-    )
-    .replace(
-      `await submitRequestForParticipantAtPoint(p, pendingPoint);`,
-      `await submitRequestForParticipantAtPoint(p, pendingPoint, 'teacher');`
-    )
-    .replace(
-      `await submitRequestForParticipantAtPoint(s, pendingPoint);`,
-      `await submitRequestForParticipantAtPoint(s, pendingPoint, 'student');`
-    )
-    .replace(
-      `await submitRequestForParticipantAtPoint(selectedStudent, point);`,
-      `await submitRequestForParticipantAtPoint(selectedStudent, point, 'student');`
-    )
-    .replace(
-      `await submitRequestForParticipantAtPoint(p, point);`,
-      `await submitRequestForParticipantAtPoint(p, point, 'teacher');`
-    )
-    .replace(
-      `requests=[];snap.forEach(d=>requests.push({id:d.id,...d.data()}));`,
-      `requests=[];snap.forEach(d=>{const r={id:d.id,...d.data()};if(r.participantPhone!==teacherPhone&&r.recipientType!=='teacher')requests.push(r);});`
-    );
-}
-function fixTeacherRecipientFlow(page, key) {
-  if (key !== 'teacher') return page;
-  page = page.replace(
-    `<button id="btn-recipient-self" type="button" class="btn bg-pink-500 text-white w-full py-2 text-sm font-semibold mb-3">🎖️ ให้ตนเอง (ครู)</button>
-      <input id="recipient-search" placeholder="🔍 ค้นหาชื่อนักเรียน..." class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm mb-2">
-      <div id="recipient-list" class="space-y-2"></div>
-      <p id="teacher-recipient-msg" class="text-xs mt-2"></p>`,
-    `<div class="flex gap-2 mb-3">
-        <button id="recipient-tab-students" type="button" class="btn bg-sky-500 text-white flex-1 py-2 text-xs font-semibold">🎓 เกียรติบัตรนักเรียน</button>
-        <button id="recipient-tab-teacher" type="button" class="btn bg-white text-slate-700 flex-1 py-2 text-xs font-semibold">🧑‍🏫 เกียรติบัตรครู</button>
-      </div>
-      <section id="recipient-students-panel">
-        <p class="text-xs text-slate-500 mb-2">เลือกนักเรียนได้สูงสุด 5 คน</p>
-        <input id="recipient-search" placeholder="🔍 ค้นหาชื่อนักเรียน..." class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm mb-2">
-        <div id="recipient-list" class="space-y-2"></div>
-        <button id="btn-recipient-students" type="button" class="btn bg-sky-500 text-white w-full py-2 text-sm font-semibold mt-3">🎓 กดรับเกียรติบัตรนักเรียน</button>
-      </section>
-      <section id="recipient-teacher-panel" class="hidden">
-        <p id="recipient-teacher-name" class="text-sm font-semibold text-center mb-3"></p>
-        <button id="btn-recipient-self" type="button" class="btn bg-pink-500 text-white w-full py-2 text-sm font-semibold">🧑‍🏫 กดรับเกียรติบัตรครูทันที</button>
-      </section>
-      <p id="teacher-recipient-msg" class="text-xs mt-2"></p>`
-  );
-  page = page.replace(
-    /<\/script>\s*<script>\s*document\.addEventListener/,
-    `
-let selectedRecipientIds = [];
-function setRecipientTab(tab){
-  const studentTab=document.getElementById('recipient-tab-students');
-  const teacherTab=document.getElementById('recipient-tab-teacher');
-  const studentPanel=document.getElementById('recipient-students-panel');
-  const teacherPanel=document.getElementById('recipient-teacher-panel');
-  const isTeacher=tab==='teacher';
-  studentPanel.classList.toggle('hidden',isTeacher);
-  teacherPanel.classList.toggle('hidden',!isTeacher);
-  studentTab.className='btn flex-1 py-2 text-xs font-semibold '+(isTeacher?'bg-white text-slate-700':'bg-sky-500 text-white');
-  teacherTab.className='btn flex-1 py-2 text-xs font-semibold '+(isTeacher?'bg-pink-500 text-white':'bg-white text-slate-700');
-}
-function renderRecipientList(){
-  const kw=document.getElementById('recipient-search').value.trim().toLowerCase();
-  const box=document.getElementById('recipient-list');
-  const filtered=students.filter(s=>!kw||String(s.name||'').toLowerCase().includes(kw));
-  if(!filtered.length){box.innerHTML='<p class="text-xs text-slate-400 text-center py-3">ไม่พบนักเรียน</p>';return;}
-  box.innerHTML=filtered.map(s=>\`<label class="w-full card p-2.5 flex items-center gap-2 cursor-pointer"><input type="checkbox" data-pick="\${s.id}" class="w-4 h-4" \${selectedRecipientIds.includes(s.id)?'checked':''}><span class="text-sm font-medium flex-1">\${s.name}</span><span class="text-xs text-slate-400">\${s.phone||''}</span></label>\`).join('');
-  box.querySelectorAll('[data-pick]').forEach(input=>input.onchange=()=>{
-    const id=input.getAttribute('data-pick');
-    if(input.checked&&!selectedRecipientIds.includes(id)){
-      if(selectedRecipientIds.length>=5){input.checked=false;document.getElementById('teacher-recipient-msg').textContent='เลือกนักเรียนได้สูงสุด 5 คน';return;}
-      selectedRecipientIds.push(id);
-    }else if(!input.checked) selectedRecipientIds=selectedRecipientIds.filter(x=>x!==id);
-    document.getElementById('teacher-recipient-msg').textContent='เลือกแล้ว '+selectedRecipientIds.length+'/5 คน';
-  });
-}
-document.getElementById('recipient-search').oninput=renderRecipientList;
-function returnTeacherHome(){
-  document.getElementById('teacher-recipient-modal').classList.add('hidden');
-  setTeacherTab('overview');
-  window.scrollTo({top:0,behavior:'smooth'});
-}
-document.getElementById('btn-recipient-students').onclick=async()=>{
-  const msg=document.getElementById('teacher-recipient-msg');
-  const picked=students.filter(s=>selectedRecipientIds.includes(s.id));
-  if(!picked.length){msg.innerHTML='<span class="text-red-500">กรุณาเลือกนักเรียนอย่างน้อย 1 คน</span>';return;}
-  msg.textContent='กำลังส่งคำขอ...';
-  try{await Promise.all(picked.map(s=>submitRequestForParticipantAtPoint(s,pendingPoint,'student')));returnTeacherHome();}
-  catch(err){msg.innerHTML='<span class="text-red-500">'+(err.message||'ส่งคำขอไม่สำเร็จ')+'</span>';}
-};
-document.getElementById('btn-recipient-self').onclick=async()=>{
-  const msg=document.getElementById('teacher-recipient-msg');msg.textContent='กำลังส่งคำขอ...';
-  try{const p=await getOrCreateTeacherParticipant();await submitRequestForParticipantAtPoint(p,pendingPoint,'teacher');returnTeacherHome();}
-  catch(err){msg.innerHTML='<span class="text-red-500">'+(err.message||'ส่งคำขอไม่สำเร็จ')+'</span>';}
-};
-handleTeacherQr=async function(raw){
-  const msg=document.getElementById('teacher-scan-status');
-  try{
-    const qrLink=await resolveTeacherQrLink(raw);
-    if(!qrLink.pointCode)throw new Error('เปิดลิงก์ Dynamic QR ไม่สำเร็จ หรือไม่พบลิงก์กิจกรรมปลายทาง');
-    const ps=await getDocs(query(collection(db,COL.POINTS),where('code','==',qrLink.pointCode)));
-    if(ps.empty)throw new Error('ไม่พบจุดกิจกรรมนี้');
-    pendingPoint={id:ps.docs[0].id,...ps.docs[0].data()};
-    selectedRecipientIds=scanMode==='preselected'&&selectedStudent?[selectedStudent.id]:[];
-    await stopTeacherScanner();
-    document.getElementById('teacher-recipient-point').textContent='จุดกิจกรรม: '+pendingPoint.name;
-    document.getElementById('teacher-recipient-msg').textContent='';
-    document.getElementById('recipient-search').value='';
-    document.getElementById('recipient-teacher-name').textContent='ครู: '+(teacherName||teacherPhone);
-    setRecipientTab(scanMode==='self'?'teacher':'students');
-    renderRecipientList();
-    document.getElementById('teacher-recipient-modal').classList.remove('hidden');
-  }catch(err){msg.textContent=err.message||'เปิด QR ไม่สำเร็จ';}
-};
-</script><script>document.addEventListener`
-  );
-  return page;
-}
-function fixApprovedExcelTeacherStatus(page, key) {
-  if (key !== 'approved') return page;
-  return page
-    .replace(
-      `const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ'];`,
-      `const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ', 'สถานะ'];`
-    )
-    .replace(
-      `fmtDate(r.approvedAt)
-  ];`,
-      `fmtDate(r.approvedAt),
-    (r.recipientType === 'teacher' || r.participantType === 'teacher' || r.participantNote === 'ครู' || r.registeredBy === 'teacher-self') ? 'ครู' : 'นักเรียน'
-  ];`
-    );
 }
 function fixAdminClearActions(page, key) {
   if (key !== 'admin') return page;
@@ -553,7 +312,7 @@ function route() {
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixApprovedExcelTeacherStatus(fixTeacherRecipientFlow(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key), key), key), key);
+  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
