@@ -303,6 +303,148 @@ function fixTeacherStudentModal(page, key) {
       'class="bg-white border-2 border-slate-900 rounded-2xl w-full max-w-md max-h-[85vh] overflow-y-auto p-5"'
     );
 }
+function fixTeacherStudentSeparation(page, key) {
+  if (key !== 'teacher') return page;
+  return page
+    .replace(
+      `async function submitRequestForParticipantAtPoint(participant, point){`,
+      `async function submitRequestForParticipantAtPoint(participant, point, recipientType='student'){`
+    )
+    .replace(
+      `approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'' });`,
+      `approvedBy:null, approvedAt:null, requestedByTeacher:auth.currentUser?.uid||'', recipientType });`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(p, pendingPoint);`,
+      `await submitRequestForParticipantAtPoint(p, pendingPoint, 'teacher');`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(s, pendingPoint);`,
+      `await submitRequestForParticipantAtPoint(s, pendingPoint, 'student');`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(selectedStudent, point);`,
+      `await submitRequestForParticipantAtPoint(selectedStudent, point, 'student');`
+    )
+    .replace(
+      `await submitRequestForParticipantAtPoint(p, point);`,
+      `await submitRequestForParticipantAtPoint(p, point, 'teacher');`
+    )
+    .replace(
+      `requests=[];snap.forEach(d=>requests.push({id:d.id,...d.data()}));`,
+      `requests=[];snap.forEach(d=>{const r={id:d.id,...d.data()};if(r.participantPhone!==teacherPhone&&r.recipientType!=='teacher')requests.push(r);});`
+    );
+}
+function fixTeacherRecipientFlow(page, key) {
+  if (key !== 'teacher') return page;
+  page = page.replace(
+    `<button id="btn-recipient-self" type="button" class="btn bg-pink-500 text-white w-full py-2 text-sm font-semibold mb-3">🎖️ ให้ตนเอง (ครู)</button>
+      <input id="recipient-search" placeholder="🔍 ค้นหาชื่อนักเรียน..." class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm mb-2">
+      <div id="recipient-list" class="space-y-2"></div>
+      <p id="teacher-recipient-msg" class="text-xs mt-2"></p>`,
+    `<div class="flex gap-2 mb-3">
+        <button id="recipient-tab-students" type="button" class="btn bg-sky-500 text-white flex-1 py-2 text-xs font-semibold">🎓 เกียรติบัตรนักเรียน</button>
+        <button id="recipient-tab-teacher" type="button" class="btn bg-white text-slate-700 flex-1 py-2 text-xs font-semibold">🧑‍🏫 เกียรติบัตรครู</button>
+      </div>
+      <section id="recipient-students-panel">
+        <p class="text-xs text-slate-500 mb-2">เลือกนักเรียนได้สูงสุด 5 คน</p>
+        <input id="recipient-search" placeholder="🔍 ค้นหาชื่อนักเรียน..." class="w-full border-2 border-slate-900 rounded-xl px-3 py-2 text-sm mb-2">
+        <div id="recipient-list" class="space-y-2"></div>
+        <button id="btn-recipient-students" type="button" class="btn bg-sky-500 text-white w-full py-2 text-sm font-semibold mt-3">🎓 กดรับเกียรติบัตรนักเรียน</button>
+      </section>
+      <section id="recipient-teacher-panel" class="hidden">
+        <p id="recipient-teacher-name" class="text-sm font-semibold text-center mb-3"></p>
+        <button id="btn-recipient-self" type="button" class="btn bg-pink-500 text-white w-full py-2 text-sm font-semibold">🧑‍🏫 กดรับเกียรติบัตรครูทันที</button>
+      </section>
+      <p id="teacher-recipient-msg" class="text-xs mt-2"></p>`
+  );
+  page = page.replace(
+    /<\/script>\s*<script>\s*document\.addEventListener/,
+    `
+let selectedRecipientIds = [];
+function setRecipientTab(tab){
+  const studentTab=document.getElementById('recipient-tab-students');
+  const teacherTab=document.getElementById('recipient-tab-teacher');
+  const studentPanel=document.getElementById('recipient-students-panel');
+  const teacherPanel=document.getElementById('recipient-teacher-panel');
+  const isTeacher=tab==='teacher';
+  studentPanel.classList.toggle('hidden',isTeacher);
+  teacherPanel.classList.toggle('hidden',!isTeacher);
+  studentTab.className='btn flex-1 py-2 text-xs font-semibold '+(isTeacher?'bg-white text-slate-700':'bg-sky-500 text-white');
+  teacherTab.className='btn flex-1 py-2 text-xs font-semibold '+(isTeacher?'bg-pink-500 text-white':'bg-white text-slate-700');
+}
+function renderRecipientList(){
+  const kw=document.getElementById('recipient-search').value.trim().toLowerCase();
+  const box=document.getElementById('recipient-list');
+  const filtered=students.filter(s=>!kw||String(s.name||'').toLowerCase().includes(kw));
+  if(!filtered.length){box.innerHTML='<p class="text-xs text-slate-400 text-center py-3">ไม่พบนักเรียน</p>';return;}
+  box.innerHTML=filtered.map(s=>\`<label class="w-full card p-2.5 flex items-center gap-2 cursor-pointer"><input type="checkbox" data-pick="\${s.id}" class="w-4 h-4" \${selectedRecipientIds.includes(s.id)?'checked':''}><span class="text-sm font-medium flex-1">\${s.name}</span><span class="text-xs text-slate-400">\${s.phone||''}</span></label>\`).join('');
+  box.querySelectorAll('[data-pick]').forEach(input=>input.onchange=()=>{
+    const id=input.getAttribute('data-pick');
+    if(input.checked&&!selectedRecipientIds.includes(id)){
+      if(selectedRecipientIds.length>=5){input.checked=false;document.getElementById('teacher-recipient-msg').textContent='เลือกนักเรียนได้สูงสุด 5 คน';return;}
+      selectedRecipientIds.push(id);
+    }else if(!input.checked) selectedRecipientIds=selectedRecipientIds.filter(x=>x!==id);
+    document.getElementById('teacher-recipient-msg').textContent='เลือกแล้ว '+selectedRecipientIds.length+'/5 คน';
+  });
+}
+document.getElementById('recipient-search').oninput=renderRecipientList;
+function returnTeacherHome(){
+  document.getElementById('teacher-recipient-modal').classList.add('hidden');
+  setTeacherTab('overview');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.getElementById('btn-recipient-students').onclick=async()=>{
+  const msg=document.getElementById('teacher-recipient-msg');
+  const picked=students.filter(s=>selectedRecipientIds.includes(s.id));
+  if(!picked.length){msg.innerHTML='<span class="text-red-500">กรุณาเลือกนักเรียนอย่างน้อย 1 คน</span>';return;}
+  msg.textContent='กำลังส่งคำขอ...';
+  try{await Promise.all(picked.map(s=>submitRequestForParticipantAtPoint(s,pendingPoint,'student')));returnTeacherHome();}
+  catch(err){msg.innerHTML='<span class="text-red-500">'+(err.message||'ส่งคำขอไม่สำเร็จ')+'</span>';}
+};
+document.getElementById('btn-recipient-self').onclick=async()=>{
+  const msg=document.getElementById('teacher-recipient-msg');msg.textContent='กำลังส่งคำขอ...';
+  try{const p=await getOrCreateTeacherParticipant();await submitRequestForParticipantAtPoint(p,pendingPoint,'teacher');returnTeacherHome();}
+  catch(err){msg.innerHTML='<span class="text-red-500">'+(err.message||'ส่งคำขอไม่สำเร็จ')+'</span>';}
+};
+handleTeacherQr=async function(raw){
+  const msg=document.getElementById('teacher-scan-status');
+  try{
+    const qrLink=await resolveTeacherQrLink(raw);
+    if(!qrLink.pointCode)throw new Error('เปิดลิงก์ Dynamic QR ไม่สำเร็จ หรือไม่พบลิงก์กิจกรรมปลายทาง');
+    const ps=await getDocs(query(collection(db,COL.POINTS),where('code','==',qrLink.pointCode)));
+    if(ps.empty)throw new Error('ไม่พบจุดกิจกรรมนี้');
+    pendingPoint={id:ps.docs[0].id,...ps.docs[0].data()};
+    selectedRecipientIds=scanMode==='preselected'&&selectedStudent?[selectedStudent.id]:[];
+    await stopTeacherScanner();
+    document.getElementById('teacher-recipient-point').textContent='จุดกิจกรรม: '+pendingPoint.name;
+    document.getElementById('teacher-recipient-msg').textContent='';
+    document.getElementById('recipient-search').value='';
+    document.getElementById('recipient-teacher-name').textContent='ครู: '+(teacherName||teacherPhone);
+    setRecipientTab(scanMode==='self'?'teacher':'students');
+    renderRecipientList();
+    document.getElementById('teacher-recipient-modal').classList.remove('hidden');
+  }catch(err){msg.textContent=err.message||'เปิด QR ไม่สำเร็จ';}
+};
+</script><script>document.addEventListener`
+  );
+  return page;
+}
+function fixApprovedExcelTeacherStatus(page, key) {
+  if (key !== 'approved') return page;
+  return page
+    .replace(
+      `const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ'];`,
+      `const headers = ['ชื่อ-นามสกุล', 'เบอร์โทรศัพท์', 'โรงเรียน/หน่วยงาน', 'ฐานกิจกรรม', 'วันที่อนุมัติ', 'สถานะ'];`
+    )
+    .replace(
+      `fmtDate(r.approvedAt)
+  ];`,
+      `fmtDate(r.approvedAt),
+    (r.recipientType === 'teacher' || r.participantType === 'teacher' || r.participantNote === 'ครู' || r.registeredBy === 'teacher-self') ? 'ครู' : 'นักเรียน'
+  ];`
+    );
+}
 function fixAdminClearActions(page, key) {
   if (key !== 'admin') return page;
   page = page.replace(
@@ -346,7 +488,7 @@ function route() {
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
   const page = isZero ? 'zero' : ((raw.split('?')[0] || 'index').replace(/[^a-z]/gi, ''));
   const key = pages[page] ? page : 'index';
-  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key);
+  view.srcdoc = addTeacherReturnNotice(fixAdminClearActions(fixApprovedExcelTeacherStatus(fixTeacherRecipientFlow(fixTeacherStudentSeparation(fixTeacherStudentModal(fixTeacherQrPointParsing(addTeacherPhoneGuard(addCheckinSuccessRedirect(addTeacherStudentRegistration(rewriteStorageImagesToFirestore(decode(pages[key]), key), key), key), key), key), key), key), key), key), key), key);
   document.title = `ART2569 — ${key}`;
 }
 window.addEventListener('hashchange', route);
