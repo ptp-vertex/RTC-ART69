@@ -172,25 +172,85 @@ function addTeacherPhoneGuard(page, key) {
     'import { auth, db, COL, ensureAnonymous,',
     'import { auth, db, COL, phoneKey, phoneAuthEmail, ensureAnonymous,'
   );
+  page = page.replace(
+    '</body>',
+    `<div id="teacher-award-box" class="hidden card p-5 max-w-md mx-auto mb-6">
+  <p class="text-lg font-bold text-center mb-1">เลือกรับเกียรติบัตร</p>
+  <p id="teacher-award-point" class="text-sm text-slate-500 text-center mb-3"></p>
+  <div class="flex gap-2 mb-3">
+    <button id="teacher-award-student-tab" type="button" class="btn bg-sky-500 text-white flex-1 py-2 text-xs font-semibold">เกียรติบัตรนักเรียน</button>
+    <button id="teacher-award-teacher-tab" type="button" class="btn bg-white text-slate-700 flex-1 py-2 text-xs font-semibold">เกียรติบัตรครู</button>
+  </div>
+  <section id="teacher-award-student-panel">
+    <p class="text-xs text-slate-500 mb-2">เลือกนักเรียนได้สูงสุด 5 คน</p>
+    <div id="teacher-award-students" class="space-y-2"></div>
+    <button id="teacher-award-student-submit" type="button" class="btn bg-sky-500 text-white w-full py-2 mt-3 text-sm font-semibold">กดรับเกียรติบัตรนักเรียน</button>
+  </section>
+  <section id="teacher-award-teacher-panel" class="hidden">
+    <p id="teacher-award-teacher-name" class="text-sm text-center mb-3"></p>
+    <button id="teacher-award-teacher-submit" type="button" class="btn bg-pink-500 text-white w-full py-2 text-sm font-semibold">กดรับเกียรติบัตรครูทันที</button>
+  </section>
+  <p id="teacher-award-msg" class="text-xs mt-3"></p>
+</div></body>`
+  );
+  page = page.replace(
+    /<\/script>\s*(?=<div id="teacher-award-box")/,
+    `
+let teacherAward = null, teacherAwardStudents = [], teacherAwardSelected = [];
+function showTeacherAwardChoice(teacher){
+  teacherAward=teacher; hideAllSteps();
+  document.getElementById('teacher-award-point').textContent='ฐาน: '+(pointData?.name||'');
+  document.getElementById('teacher-award-teacher-name').textContent='ครู: '+(teacher.name||teacher.phone||'');
+  document.getElementById('teacher-award-box').classList.remove('hidden');
+  setTeacherAwardTab('students');
+  getDocs(query(collection(db,COL.PARTICIPANTS),where('school','==',teacher.school||''))).then(snap=>{
+    teacherAwardStudents=[];snap.forEach(d=>teacherAwardStudents.push({id:d.id,...d.data()}));
+    renderTeacherAwardStudents();
+  });
+}
+function setTeacherAwardTab(tab){
+  const t=tab==='teacher';
+  document.getElementById('teacher-award-student-panel').classList.toggle('hidden',t);
+  document.getElementById('teacher-award-teacher-panel').classList.toggle('hidden',!t);
+  document.getElementById('teacher-award-student-tab').className='btn flex-1 py-2 text-xs font-semibold '+(t?'bg-white text-slate-700':'bg-sky-500 text-white');
+  document.getElementById('teacher-award-teacher-tab').className='btn flex-1 py-2 text-xs font-semibold '+(t?'bg-pink-500 text-white':'bg-white text-slate-700');
+}
+function renderTeacherAwardStudents(){
+  const box=document.getElementById('teacher-award-students');
+  box.innerHTML=teacherAwardStudents.map(s=>'<label class="card p-2 flex items-center gap-2"><input type="checkbox" data-teacher-award-id="'+s.id+'" '+(teacherAwardSelected.includes(s.id)?'checked':'')+'><span class="text-sm flex-1">'+s.name+'</span><span class="text-xs text-slate-400">'+(s.phone||'')+'</span></label>').join('')||'<p class="text-xs text-slate-400 text-center py-3">ไม่พบนักเรียน</p>';
+  box.querySelectorAll('[data-teacher-award-id]').forEach(input=>input.onchange=()=>{
+    const id=input.getAttribute('data-teacher-award-id');
+    if(input.checked&&!teacherAwardSelected.includes(id)){if(teacherAwardSelected.length>=5){input.checked=false;return;}teacherAwardSelected.push(id);}
+    if(!input.checked)teacherAwardSelected=teacherAwardSelected.filter(x=>x!==id);
+  });
+}
+async function submitTeacherAward(p){
+  const dup=await getDocs(query(collection(db,COL.REQUESTS),where('participantId','==',p.id),where('pointId','==',pointData.id)));
+  if(!dup.empty)throw new Error('มีคำขอจากฐานนี้แล้ว: '+p.name);
+  await addDoc(collection(db,COL.REQUESTS),{participantId:p.id,participantName:p.name,participantPhone:p.phone||'',participantSchool:p.school||'',pointId:pointData.id,pointName:pointData.name,status:'pending',requestedAt:serverTimestamp(),approvedBy:null,approvedAt:null,recipientType:p.recipientType||'student'});
+}
+document.getElementById('teacher-award-student-tab').onclick=()=>setTeacherAwardTab('students');
+document.getElementById('teacher-award-teacher-tab').onclick=()=>setTeacherAwardTab('teacher');
+document.getElementById('teacher-award-student-submit').onclick=async()=>{
+  const msg=document.getElementById('teacher-award-msg'),picked=teacherAwardStudents.filter(s=>teacherAwardSelected.includes(s.id));
+  if(!picked.length){msg.textContent='กรุณาเลือกนักเรียนอย่างน้อย 1 คน';return;} msg.textContent='กำลังส่งคำขอ...';
+  try{await Promise.all(picked.map(s=>submitTeacherAward(s)));msg.textContent='รับเกียรติบัตรนักเรียนสำเร็จ';}catch(e){msg.textContent=e.message||'ส่งคำขอไม่สำเร็จ';}
+};
+document.getElementById('teacher-award-teacher-submit').onclick=async()=>{
+  const msg=document.getElementById('teacher-award-msg');msg.textContent='กำลังส่งคำขอ...';
+  try{const p={id:'teacher:'+phoneKey(teacherAward.phone),name:teacherAward.name||teacherAward.phone,phone:teacherAward.phone,school:teacherAward.school||'',recipientType:'teacher'};await submitTeacherAward(p);msg.textContent='รับเกียรติบัตรครูสำเร็จ';}catch(e){msg.textContent=e.message||'ส่งคำขอไม่สำเร็จ';}
+};
+</script>`
+  );
   const guardedLogin = `
   try {
     const staffSnap = await getDocs(query(collection(db, COL.STAFF), where('phone','==',phone)));
-    const staff = staffSnap.empty ? null : staffSnap.docs[0].data();
-    const teacherWasLoggedInBefore = staff?.role === 'teacher' && (
-      auth.currentUser?.email === phoneAuthEmail(phone) ||
-      phoneKey(localStorage.getItem('art2569_teacher_phone') || '') === phoneKey(phone)
-    );
+    const staff = staffSnap.empty ? null : { phone, ...staffSnap.docs[0].data() };
     if (staff?.role === 'teacher') {
-      const notice = teacherWasLoggedInBefore
-        ? 'พบเบอร์ครูและกำลังเข้าสู่ระบบครูอัตโนมัติ\\nกรุณาเลือกเมนู “สแกนกิจกรรม” แล้วสแกน QR อีกครั้ง'
-        : 'เบอร์นี้เป็นบัญชีครู\\nกรุณาเข้าสู่ระบบหน้าครูก่อน แล้วเลือก “สแกนกิจกรรม” เพื่อสแกน QR อีกครั้ง';
-      localStorage.setItem('art2569_teacher_login_notice', notice);
-      alert(notice);
-      if (parent !== window) parent.location.hash = 'teacher';
-      else location.hash = 'teacher';
-      return;
+      showTeacherAwardChoice(staff);
+    } else {
+      await resolveIdentity(phone);
     }
-    await resolveIdentity(phone);
   } catch(err){
     msg.innerHTML = '<span class="text-red-500">เข้าสู่ระบบไม่สำเร็จ: '+(err.message||err.code)+'</span>';
   }`;
@@ -206,6 +266,11 @@ function addTeacherPhoneGuard(page, key) {
 }
 function addTeacherReturnNotice(page, key) {
   if (key !== 'teacher') return page;
+  // Do not redirect or show an old automatic-login notice on the teacher page.
+  page = page.replace(
+    `const notice = localStorage.getItem('art2569_teacher_login_notice');`,
+    `const notice = null;`
+  );
   const noticeScript = '<scr' + 'ipt>' + `
 (function showTeacherReturnNotice(){
   const notice = localStorage.getItem('art2569_teacher_login_notice');
