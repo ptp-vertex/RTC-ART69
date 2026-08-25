@@ -17,9 +17,131 @@ html, body { margin:0; width:100%; height:100%; background:#f8fafc; }
 <style id="art2569-outer-zoom-lock">
 html,body,#app,#view{touch-action:manipulation;-ms-touch-action:manipulation;-webkit-text-size-adjust:100%;}
 </style>
+<style id="art2569-loading-style">
+  html, body { background: #fdf2f8; }
+  #art2569-loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    background: #fdf2f8;
+    opacity: 1;
+    visibility: visible;
+    transition: opacity .32s ease, visibility .32s ease;
+  }
+  #art2569-loading-overlay.is-hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+  #art2569-loading-overlay .art-loading-dots {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .13;
+    background-image: radial-gradient(circle, #db2777 1.3px, transparent 1.3px);
+    background-size: 18px 18px;
+  }
+  #art2569-loading-overlay .art-loading-star {
+    position: absolute;
+    pointer-events: none;
+    color: #ec4899;
+    font-size: clamp(1.25rem, 4vw, 2.2rem);
+    line-height: 1;
+    filter: drop-shadow(1px 1px 0 rgba(15,23,42,.55));
+    animation: art2569-loading-twinkle 1.8s ease-in-out infinite;
+  }
+  #art2569-loading-overlay .art-loading-star:nth-of-type(2) { top: 14%; left: 13%; color: #f59e0b; animation-delay: .25s; }
+  #art2569-loading-overlay .art-loading-star:nth-of-type(3) { top: 17%; right: 14%; color: #14b8a6; animation-delay: .65s; }
+  #art2569-loading-overlay .art-loading-star:nth-of-type(4) { bottom: 15%; left: 15%; color: #a855f7; animation-delay: 1s; }
+  #art2569-loading-overlay .art-loading-center {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: .8rem;
+    text-align: center;
+  }
+  #art2569-loading-overlay .art-loading-spinner {
+    width: 72px;
+    height: 72px;
+    border: 3px solid #0f172a;
+    border-radius: 50%;
+    padding: 6px;
+    background: conic-gradient(#ec4899 0deg 90deg, #facc15 90deg 180deg, #2dd4bf 180deg 270deg, #a855f7 270deg 360deg);
+    box-shadow: 2px 2px 0 rgba(15,23,42,.18);
+    animation: art2569-loading-spin .9s linear infinite;
+  }
+  #art2569-loading-overlay .art-loading-spinner::after {
+    content: '';
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 3px solid #0f172a;
+    border-radius: 50%;
+    background: #fff;
+    box-sizing: border-box;
+  }
+  #art2569-loading-overlay .art-loading-status {
+    margin: 0;
+    color: #0f172a;
+    font-size: .95rem;
+    font-weight: 700;
+  }
+  #art2569-loading-overlay .art-loading-status span { display: inline-flex; min-width: 1.7rem; }
+  #art2569-loading-overlay .art-loading-status i { font-style: normal; animation: art2569-loading-bounce 1s infinite; }
+  #art2569-loading-overlay .art-loading-status i:nth-child(2) { animation-delay: .15s; }
+  #art2569-loading-overlay .art-loading-status i:nth-child(3) { animation-delay: .3s; }
+  @keyframes art2569-loading-spin { to { transform: rotate(360deg); } }
+  @keyframes art2569-loading-twinkle { 0%,100% { opacity: .25; transform: scale(.78) rotate(0deg); } 45% { opacity: 1; transform: scale(1.1) rotate(12deg); } 70% { opacity: .45; transform: scale(.88) rotate(-7deg); } }
+  @keyframes art2569-loading-bounce { 0%,60%,100% { transform: translateY(0); opacity: .35; } 30% { transform: translateY(-4px); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    #art2569-loading-overlay * { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  }
+</style>
 </head>
 <body>
+<div id="art2569-loading-overlay" role="status" aria-live="polite" aria-label="กำลังโหลดระบบ">
+  <div class="art-loading-dots"></div>
+  <span class="art-loading-star" aria-hidden="true">★</span>
+  <span class="art-loading-star" aria-hidden="true">✦</span>
+  <span class="art-loading-star" aria-hidden="true">★</span>
+  <div class="art-loading-center">
+    <div class="art-loading-spinner" aria-hidden="true"></div>
+    <p class="art-loading-status">กำลังโหลด<span><i>.</i><i>.</i><i>.</i></span></p>
+  </div>
+</div>
 <div id="app"><iframe id="view" title="ART2569" allow="clipboard-write"></iframe></div>
+<script id="art2569-loading-controller">
+(function(){
+  const overlay = document.getElementById('art2569-loading-overlay');
+  const view = document.getElementById('view');
+  if (!overlay || !view) return;
+  let startedAt = performance.now();
+  let hideTimer = null;
+  let failsafe = null;
+  function show(){
+    startedAt = performance.now();
+    clearTimeout(hideTimer); clearTimeout(failsafe);
+    overlay.classList.remove('is-hidden');
+    document.documentElement.classList.add('art2569-loading-active');
+    failsafe = setTimeout(hide, 9000);
+  }
+  function hide(){
+    clearTimeout(failsafe);
+    const wait = Math.max(0, 520 - (performance.now() - startedAt));
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function(){
+      overlay.classList.add('is-hidden');
+      document.documentElement.classList.remove('art2569-loading-active');
+    }, wait);
+  }
+  view.addEventListener('load', hide);
+  window.addEventListener('hashchange', function(){ show(); });
+  window.__art2569Loading = { show, hide };
+  show();
+})();
+</script>
 <script>
 const pages = {
       zero: "PCFkb2N0eXBlIGh0bWw+PGh0bWwgbGFuZz0idGgiPjxoZWFkPjxtZXRhIGNoYXJzZXQ9IlVURi04Ij4KPGxpbmsgcmVsPSJpY29uIiB0eXBlPSJpbWFnZS9wbmciIGhyZWY9ImxvZ280LnBuZyI+CjxtZXRhIHByb3BlcnR5PSJvZzppbWFnZSIgY29udGVudD0ibG9nbzMuanBnIj4KPG1ldGEgcHJvcGVydHk9Im9nOnRpdGxlIiBjb250ZW50PSLguJXguKXguLLguJTguJnguLHguJTguK3guLLguIrguLXguJ7guYHguKXguLDguJnguLTguJfguKPguKPguKjguIHguLLguKPguKjguLTguKXguJvguLAgVXAtU2tpbGwgUmUtU2tpbGwiPgo8bWV0YSBwcm9wZXJ0eT0ib2c6ZGVzY3JpcHRpb24iIGNvbnRlbnQ9IuC4p+C4tOC4l+C4ouC4suC4peC4seC4ouC5gOC4l+C4hOC4meC4tOC4hOC4o+C4suC4iuC4muC4uOC4o+C4tSI+CjxtZXRhIG5hbWU9InZpZXdwb3J0IiBjb250ZW50PSJ3aWR0aD1kZXZpY2Utd2lkdGgsaW5pdGlhbC1zY2FsZT0xIj48dGl0bGU+4Lio4Li54LiZ4Lii4LmM4Lij4Lin4Lih4Lil4Li04LiH4LiB4LmMPC90aXRsZT48c2NyaXB0IHNyYz0iaHR0cHM6Ly9jZG4udGFpbHdpbmRjc3MuY29tIj48L3NjcmlwdD48bGluayBocmVmPSJodHRwczovL2ZvbnRzLmdvb2dsZWFwaXMuY29tL2NzczI/ZmFtaWx5PUthbml0OndnaHRAMzAwOzQwMDs1MDA7NjAwOzcwMCZkaXNwbGF5PXN3YXAiIHJlbD0ic3R5bGVzaGVldCI+PHN0eWxlPmJvZHl7Zm9udC1mYW1pbHk6S2FuaXQsc2Fucy1zZXJpZjtiYWNrZ3JvdW5kOiNmZmY3ZmI7Y29sb3I6IzFlMjkzYn0uY2FyZHtiYWNrZ3JvdW5kOiNmZmY7Ym9yZGVyOjJweCBzb2xpZCAjMGYxNzJhO2JvcmRlci1yYWRpdXM6MS4yNXJlbTtib3gtc2hhZG93OjVweCA1cHggMCByZ2JhKDE1LDIzLDQyLC45KX0uYnRue2JvcmRlcjoycHggc29saWQgIzBmMTcyYTtib3JkZXItcmFkaXVzOi45cmVtO2JveC1zaGFkb3c6M3B4IDNweCAwIHJnYmEoMTUsMjMsNDIsLjkpO3RyYW5zaXRpb246LjEyc30uYnRuOmFjdGl2ZXt0cmFuc2Zvcm06dHJhbnNsYXRlKDNweCwzcHgpO2JveC1zaGFkb3c6MCAwIDAgdHJhbnNwYXJlbnR9Lmxpbmstcm93e2Rpc3BsYXk6Z3JpZDtncmlkLXRlbXBsYXRlLWNvbHVtbnM6MWZyIGF1dG8gYXV0bztnYXA6LjVyZW07YWxpZ24taXRlbXM6Y2VudGVyfS51cmx7Zm9udC1zaXplOi43MnJlbTtjb2xvcjojYmUxODVkO3RleHQtZGVjb3JhdGlvbjp1bmRlcmxpbmU7b3ZlcmZsb3c6aGlkZGVuO3RleHQtb3ZlcmZsb3c6ZWxsaXBzaXM7d2hpdGUtc3BhY2U6bm93cmFwO2N1cnNvcjpwb2ludGVyfS5jb3B5LW1vZGFse3Bvc2l0aW9uOmZpeGVkO2luc2V0OjA7ei1pbmRleDo1MDtiYWNrZ3JvdW5kOnJnYmEoMTUsMjMsNDIsLjU4KTtkaXNwbGF5OmZsZXg7YWxpZ24taXRlbXM6Y2VudGVyO2p1c3RpZnktY29udGVudDpjZW50ZXI7cGFkZGluZzoxcmVtfS5jb3B5LW1vZGFsLmhpZGRlbntkaXNwbGF5Om5vbmV9LmNvcHktYm94e2JhY2tncm91bmQ6I2ZmZjtib3JkZXI6MnB4IHNvbGlkICMwZjE3MmE7Ym9yZGVyLXJhZGl1czoxLjI1cmVtO2JveC1zaGFkb3c6NXB4IDVweCAwIHJnYmEoMTUsMjMsNDIsLjkpO3dpZHRoOjEwMCU7bWF4LXdpZHRoOjM4MHB4O3BhZGRpbmc6MS4yNXJlbTt0ZXh0LWFsaWduOmNlbnRlcn0uY29weS1pY29ue3dpZHRoOjU0cHg7aGVpZ2h0OjU0cHg7Ym9yZGVyLXJhZGl1czo1MCU7YmFja2dyb3VuZDojYmJmN2QwO2JvcmRlcjoycHggc29saWQgIzBmMTcyYTtkaXNwbGF5OmZsZXg7YWxpZ24taXRlbXM6Y2VudGVyO2p1c3RpZnktY29udGVudDpjZW50ZXI7bWFyZ2luOjAgYXV0byAuN3JlbTtmb250LXNpemU6MS43cmVtfUBtZWRpYShtYXgtd2lkdGg6NDYwcHgpey5saW5rLXJvd3tncmlkLXRlbXBsYXRlLWNvbHVtbnM6MWZyIGF1dG99Lmxpbmstcm93IC51cmx7Z3JpZC1jb2x1bW46MS8tMTtncmlkLXJvdzoyfS5saW5rLXJvdyAuYnRue2dyaWQtcm93OjF9fTwvc3R5bGU+PC9oZWFkPjxib2R5PjxtYWluIGNsYXNzPSJtYXgtdy14bCBteC1hdXRvIHB4LTQgcHktOCI+PGRpdiBjbGFzcz0idGV4dC1jZW50ZXIgbWItNiI+PGltZyBzcmM9ImxvZ28yLnBuZyIgYWx0PSLguYLguKXguYLguIHguYnguJXguKXguLLguJTguJnguLHguJTguK3guLLguIrguLXguJ4iIGNsYXNzPSJteC1hdXRvIGgtMTYgdy1hdXRvIG1iLTIiPjxoMSBjbGFzcz0idGV4dC0yeGwgZm9udC1ib2xkIHRleHQtcGluay02MDAgbXQtNCI+4Lio4Li54LiZ4Lii4LmM4Lij4Lin4Lih4Lil4Li04LiH4LiB4LmM4Lij4Liw4Lia4LiaPC9oMT48cCBjbGFzcz0idGV4dC1zbSB0ZXh0LXNsYXRlLTUwMCI+4LmA4Lil4Li34Lit4LiB4Lir4LiZ4LmJ4Liy4LiX4Li14LmI4LiV4LmJ4Lit4LiH4LiB4Liy4Lij4LmA4Lib4Li04LiUIOC4q+C4o+C4t+C4reC4hOC4seC4lOC4peC4reC4geC4peC4tOC4h+C4geC5jOC5hOC4m+C5g+C4iuC5ieC4h+C4suC4mTwvcD48L2Rpdj48ZGl2IGlkPSJsaW5rcyIgY2xhc3M9InNwYWNlLXktMyI+PC9kaXY+PC9tYWluPjxkaXYgaWQ9ImNvcHktbW9kYWwiIGNsYXNzPSJjb3B5LW1vZGFsIGhpZGRlbiI+PGRpdiBjbGFzcz0iY29weS1ib3giPjxkaXYgY2xhc3M9ImNvcHktaWNvbiI+4pyTPC9kaXY+PGgyIGNsYXNzPSJmb250LWJvbGQgdGV4dC1sZyI+4LiE4Lix4LiU4Lil4Lit4LiB4Lil4Li04LiH4LiB4LmM4LmB4Lil4LmJ4LinPC9oMj48cCBpZD0iY29weS1tb2RhbC10ZXh0IiBjbGFzcz0idGV4dC1zbSB0ZXh0LXNsYXRlLTUwMCBtdC0xIj7guKXguLTguIfguIHguYzguJ7guKPguYnguK3guKHguJnguLPguYTguJvguYPguIrguYnguIfguLLguJnguYHguKXguYnguKc8L3A+PGJ1dHRvbiBpZD0iY29weS1tb2RhbC1jbG9zZSIgY2xhc3M9ImJ0biBiZy1waW5rLTMwMCB3LWZ1bGwgcHktMiBtdC00IGZvbnQtc2VtaWJvbGQiPuC4m+C4tOC4lDwvYnV0dG9uPjwvZGl2PjwvZGl2PjxzY3JpcHQ+KGZ1bmN0aW9uKCl7Y29uc3QgYmFzZT1wYXJlbnQhPT13aW5kb3c/cGFyZW50LmxvY2F0aW9uLmhyZWYuc3BsaXQoJyMnKVswXTpsb2NhdGlvbi5ocmVmLnNwbGl0KCcjJylbMF07Y29uc3QgaXRlbXM9W1sn4Lir4LiZ4LmJ4Liy4LmB4Lij4LiBJywn4LiX4Liy4LiH4LmA4LiC4LmJ4Liy4LmA4Lil4Li34Lit4LiB4LmA4LiC4LmJ4Liy4Liq4Li54LmI4Lij4Liw4Lia4Lia4Lir4Lij4Li34Lit4Lil4LiH4LiX4Liw4LmA4Lia4Li14Lii4LiZJywnaW5kZXgnLCdiZy1waW5rLTMwMCddLFsn4Lic4Li54LmJ4LmD4LiK4LmJ4LiH4Liy4LiZ4LiX4Lix4LmI4Lin4LmE4LibJywn4LmA4LiC4LmJ4Liy4Liq4Li54LmI4Lij4Liw4Lia4LiaL+C4peC4h+C4l+C4sOC5gOC4muC4teC4ouC4mSDguYHguKXguLDguJTguLnguJvguKPguLDguKfguLHguJXguLTguYDguIHguLXguKLguKPguJXguLTguJrguLHguJXguKPguILguK3guIfguJXguJnguYDguK3guIcnLCd1c2VyJywnYmctcm9zZS0zMDAnXSxbJ+C5gOC4iOC5ieC4suC4q+C4meC5ieC4suC4l+C4teC5iOC4iOC4uOC4lOC4peC4h+C4l+C4sOC5gOC4muC4teC4ouC4mScsJ+C4peC4h+C4l+C4sOC5gOC4muC4teC4ouC4meC4hOC4o+C4ueC5geC4peC4sOC4meC4seC4geC5gOC4o+C4teC4ouC4meC5geC4l+C4meC4nOC4ueC5ieC5gOC4guC5ieC4suC4o+C5iOC4p+C4oScsJ3JlZ2lzdHJhdGlvbicsJ2JnLWFtYmVyLTMwMCddLFsn4LmA4LiI4LmJ4Liy4Lir4LiZ4LmJ4Liy4LiX4Li14LmI4LiI4Li44LiU4LmA4Lin4Li04Lij4LmM4LiE4LiK4LmH4Lit4LibJywn4LiU4Li54LmB4Lil4LiI4Li44LiU4LmB4Lil4Liw4Lit4LiZ4Li44Lih4Lix4LiV4Li04LiE4Liz4LiC4Lit4LmA4LiB4Li14Lii4Lij4LiV4Li04Lia4Lix4LiV4LijJywnd29ya3Nob3AnLCdiZy1wdXJwbGUtMzAwJ10sWyfguKrguLPguKvguKPguLHguJrguITguKPguLknLCfguJXguKPguKfguIjguKrguK3guJrguKPguLLguKLguIrguLfguYjguK3guJnguLHguIHguYDguKPguLXguKLguJnguYHguKXguLDguIjguLHguJTguIHguLLguKPguILguYnguK3guKHguLnguKUnLCd0ZWFjaGVyJywnYmctcHVycGxlLTMwMCddLFsn4LmB4Lit4LiU4Lih4Li04LiZJywn4LiI4Lix4LiU4LiB4Liy4Lij4Lij4Liw4Lia4LiaIOC4iOC4uOC4lOC5gOC4p+C4tOC4o+C5jOC4hOC4iuC5h+C4reC4myDguYHguKXguLDguILguYnguK3guKHguLnguKUnLCdhZG1pbicsJ2JnLXRlYWwtMzAwJ10sWyfguJXguKPguKfguIjguKrguK3guJrguITguLPguILguK0v4LmA4LiK4LmH4LiE4Lit4Li04LiZJywn4LmA4Lib4Li04LiU4Lir4LiZ4LmJ4Liy4LiV4Lij4Lin4LiI4Liq4Lit4Lia4LiE4Liz4LiC4Lit4LmA4LiB4Li14Lii4Lij4LiV4Li04Lia4Lix4LiV4LijJywnY2hlY2tpbicsJ2JnLXNreS0zMDAnXV07Y29uc3QgYm94PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdsaW5rcycpO2NvbnN0IG1vZGFsPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdjb3B5LW1vZGFsJyk7Y29uc3QgbW9kYWxUZXh0PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdjb3B5LW1vZGFsLXRleHQnKTtjb25zdCBzaG93TW9kYWw9KHRpdGxlKT0+e21vZGFsVGV4dC50ZXh0Q29udGVudD10aXRsZSsnIOKAlCDguKXguLTguIfguIHguYzguJ7guKPguYnguK3guKHguJnguLPguYTguJvguYPguIrguYnguIfguLLguJnguYHguKXguYnguKcnO21vZGFsLmNsYXNzTGlzdC5yZW1vdmUoJ2hpZGRlbicpfTtkb2N1bWVudC5nZXRFbGVtZW50QnlJZCgnY29weS1tb2RhbC1jbG9zZScpLm9uY2xpY2s9KCk9Pm1vZGFsLmNsYXNzTGlzdC5hZGQoJ2hpZGRlbicpO21vZGFsLm9uY2xpY2s9ZT0+e2lmKGUudGFyZ2V0PT09bW9kYWwpbW9kYWwuY2xhc3NMaXN0LmFkZCgnaGlkZGVuJyl9O2NvbnN0IGZhbGxiYWNrQ29weT0odGV4dCk9Pntjb25zdCB0YT1kb2N1bWVudC5jcmVhdGVFbGVtZW50KCd0ZXh0YXJlYScpO3RhLnZhbHVlPXRleHQ7dGEuc3R5bGUucG9zaXRpb249J2ZpeGVkJzt0YS5zdHlsZS5vcGFjaXR5PScwJztkb2N1bWVudC5ib2R5LmFwcGVuZENoaWxkKHRhKTt0YS5mb2N1cygpO3RhLnNlbGVjdCgpO2NvbnN0IG9rPWRvY3VtZW50LmV4ZWNDb21tYW5kKCdjb3B5Jyk7dGEucmVtb3ZlKCk7cmV0dXJuIG9rfTtpdGVtcy5mb3JFYWNoKChbdGl0bGUsZGVzYyxoYXNoLGNvbG9yXSk9Pntjb25zdCB1cmw9YmFzZSsnIycraGFzaDtjb25zdCByb3c9ZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgnZGl2Jyk7cm93LmNsYXNzTmFtZT0nY2FyZCBwLTQnO3Jvdy5pbm5lckhUTUw9JzxkaXYgY2xhc3M9Imxpbmstcm93Ij48ZGl2PjxwIGNsYXNzPSJmb250LXNlbWlib2xkIj4nK3RpdGxlKyc8L3A+PHAgY2xhc3M9InRleHQteHMgdGV4dC1zbGF0ZS01MDAiPicrZGVzYysnPC9wPjwvZGl2PjxhIGNsYXNzPSJidG4gJytjb2xvcisnIHB4LTMgcHktMiB0ZXh0LXhzIGZvbnQtc2VtaWJvbGQgdGV4dC1jZW50ZXIiIGhyZWY9IicrdXJsKyciPuC5gOC4m+C4tOC4lDwvYT48YnV0dG9uIGNsYXNzPSJidG4gYmctd2hpdGUgcHgtMyBweS0yIHRleHQteHMgZm9udC1zZW1pYm9sZCIgdHlwZT0iYnV0dG9uIj7guITguLHguJTguKXguK3guIE8L2J1dHRvbj48YSBjbGFzcz0idXJsIGxpbmstdXJsIiBocmVmPSInK3VybCsnIj4nK3VybCsnPC9hPjwvZGl2Pic7cm93LnF1ZXJ5U2VsZWN0b3IoJ2J1dHRvbicpLm9uY2xpY2s9YXN5bmMoKT0+e2xldCBvaz1mYWxzZTt0cnl7aWYobmF2aWdhdG9yLmNsaXBib2FyZCYmd2luZG93LmlzU2VjdXJlQ29udGV4dCl7YXdhaXQgbmF2aWdhdG9yLmNsaXBib2FyZC53cml0ZVRleHQodXJsKTtvaz10cnVlfWVsc2V7b2s9ZmFsbGJhY2tDb3B5KHVybCl9fWNhdGNoKGUpe29rPWZhbGxiYWNrQ29weSh1cmwpfWlmKG9rKXNob3dNb2RhbCh0aXRsZSk7ZWxzZXtjb25zdCBhPWRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoJ2EnKTthLmhyZWY9dXJsO2EudGV4dENvbnRlbnQ9dXJsO2EudGFyZ2V0PSdfYmxhbmsnO21vZGFsVGV4dC5pbm5lckhUTUw9J+C4hOC4seC4lOC4peC4reC4geC4reC4seC4leC5guC4meC4oeC4seC4leC4tOC5hOC4oeC5iOC5hOC4lOC5iSDigJQg4LiB4LiU4Lil4Li04LiH4LiB4LmM4LiZ4Li14LmJ4LmA4Lie4Li34LmI4Lit4LmA4Lib4Li04LiUOiAnO21vZGFsVGV4dC5hcHBlbmRDaGlsZChhKTttb2RhbC5jbGFzc0xpc3QucmVtb3ZlKCdoaWRkZW4nKX19O2JveC5hcHBlbmRDaGlsZChyb3cpfSk7fSkoKTs8L3NjcmlwdD48L2JvZHk+PC9odG1sPg==",
@@ -1281,9 +1403,23 @@ function addNamePrefixValidation(page, key) {
     const otherEl = cfg.other ? document.getElementById(cfg.other) : null;
     if (!form || !nameEl || !prefixEl || form.getAttribute('data-prefix-validation-installed') === '1') return;
     form.setAttribute('data-prefix-validation-installed','1');
+    const validFullNameShape = value => {
+      const s = String(value || '');
+      if (!s || s.trim() !== s || s.includes('  ') || s.includes(String.fromCharCode(9)) || s.includes(String.fromCharCode(10))) return false;
+      const parts = s.split(' ');
+      return (parts.length === 2 && parts.every(Boolean)) || (parts.length === 3 && parts[1] === 'ณ' && parts.every(Boolean));
+    };
     const validate = event => {
-      const raw = String(nameEl.value || '').trim().replace(/[\\s\\u00a0]+/g, ' ');
-      if (raw && duplicatedPrefix(raw)) {
+      const raw = String(nameEl.value || '');
+      if (raw.trim() && !validFullNameShape(raw)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        nameEl.classList.add('border-red-500');
+        const box = errorBox(form, cfg);
+        box.innerHTML = '<span class="text-red-500">กรุณากรอกชื่อและนามสกุลโดยเว้นวรรค 1 ครั้งตรงกลาง เช่น ปฏิภาณ บำเรอจิต หรือ ปฏิภาณ ณ อยุธยา</span>';
+        return false;
+      }
+      if (raw.trim() && duplicatedPrefix(raw)) {
         event.preventDefault();
         event.stopImmediatePropagation();
         nameEl.classList.add('border-red-500');
@@ -1292,7 +1428,6 @@ function addNamePrefixValidation(page, key) {
         return false;
       }
       nameEl.classList.remove('border-red-500');
-      if (raw) nameEl.value = raw;
       return true;
     };
     // ใช้ capture เพื่อให้ตรวจและแก้ค่าก่อน handler เดิมของแต่ละหน้าเริ่มบันทึกข้อมูล
@@ -1330,21 +1465,190 @@ function addNamePrefixValidation(page, key) {
       }
       return el;
     };
+    const validFullNameShape = value => {
+      const s = String(value || '');
+      if (!s || s.trim() !== s || s.includes('  ') || s.includes(String.fromCharCode(9)) || s.includes(String.fromCharCode(10))) return false;
+      const parts = s.split(' ');
+      return (parts.length === 2 && parts.every(Boolean)) || (parts.length === 3 && parts[1] === 'ณ' && parts.every(Boolean));
+    };
     form.addEventListener('submit', function(event){
-      const raw = String(nameEl.value || '').trim().replace(/[\\s\\u00a0]+/g, ' ');
-      if(raw && duplicatedPrefix(raw)){
+      const raw = String(nameEl.value || '');
+      if(raw.trim() && !validFullNameShape(raw)){
+        event.preventDefault(); event.stopImmediatePropagation(); nameEl.classList.add('border-red-500');
+        getMessage().innerHTML='<span class="text-red-500">กรุณากรอกชื่อและนามสกุลโดยเว้นวรรค 1 ครั้งตรงกลาง เช่น ปฏิภาณ บำเรอจิต หรือ ปฏิภาณ ณ อยุธยา</span>';
+        return false;
+      }
+      if(raw.trim() && duplicatedPrefix(raw)){
         event.preventDefault(); event.stopImmediatePropagation(); nameEl.classList.add('border-red-500');
         getMessage().innerHTML='<span class="text-red-500">ช่องชื่อ-นามสกุลห้ามใส่คำนำหน้าชื่อซ้ำ กรุณากรอกเฉพาะชื่อและนามสกุล</span>';
         return false;
       }
       nameEl.classList.remove('border-red-500');
-      if(raw) nameEl.value=raw;
     }, true);
     nameEl.addEventListener('input', function(){ nameEl.classList.remove('border-red-500'); const box=form.querySelector('[data-prefix-validation-msg]'); if(box) box.textContent=''; });
   });
 })();` + '<' + '/script>';
   if (!page.includes('art2569-name-prefix-validation-script')) page = page.replace('</body>', validationScript + '</body>');
   return page;
+}
+
+function fixTeacherLogout(page, key) {
+  if (key !== 'teacher') return page;
+  const robustLogout = String.raw`
+const teacherLogoutButton = document.getElementById('btn-logout');
+if (teacherLogoutButton) teacherLogoutButton.onclick = async () => {
+  teacherLogoutButton.disabled = true;
+  teacherLogoutButton.textContent = 'กำลังออกจากระบบ...';
+  try { await signOut(auth); } catch (_) {}
+  try {
+    if (typeof teacherUnsubs !== 'undefined' && Array.isArray(teacherUnsubs)) {
+      teacherUnsubs.forEach(fn => { try { if (typeof fn === 'function') fn(); } catch (_) {} });
+      teacherUnsubs = [];
+    }
+  } catch (_) {}
+  ['art2569_teacher_phone','art2569_staff_phone','art2569_profile_phone','art2569_user_phone','art2569_user_id'].forEach(k => localStorage.removeItem(k));
+  try { if (typeof teacherScanStream !== 'undefined' && teacherScanStream) teacherScanStream.getTracks().forEach(t => t.stop()); } catch (_) {}
+  const dash = document.getElementById('dash-box');
+  const login = document.getElementById('login-box');
+  if (dash) dash.classList.add('hidden');
+  if (login) login.classList.remove('hidden');
+  const form = document.getElementById('login-form');
+  if (form) form.reset();
+  const msg = document.getElementById('login-msg');
+  if (msg) { msg.className = 'text-xs text-teal-600 mt-2'; msg.textContent = 'ออกจากระบบแล้ว'; }
+  teacherLogoutButton.disabled = false;
+  teacherLogoutButton.textContent = 'ออกจากระบบ';
+};
+`;
+  const original = "document.getElementById('btn-logout').onclick = () => signOut(auth);";
+  if (page.includes(original)) return page.replace(original, robustLogout);
+  const anchor = "document.getElementById('login-form').onsubmit = async";
+  if (page.includes(anchor)) return page.replace(anchor, robustLogout + '\n' + anchor);
+  return page;
+}
+
+function addSchoolDirectoryAssist(page, key) {
+  const moduleMatch = page.match(/from\s+(['"])(data:text\/javascript;base64,[^'"]+)\1/);
+  const moduleUrl = moduleMatch && moduleMatch[2];
+  if (!moduleUrl) return page;
+  const closeScript = '<' + '/script>';
+  // เอา script รายการเดิมออก เพื่อไม่ให้สร้าง datalist/ตัวจับ input ซ้ำกับระบบใหม่
+  page = page.replace(/<script\b[^>]*type=["']module["'][^>]*>[\s\S]*?<\/script>/gi, block => block.includes('known-schools-list') ? '' : block);
+  const style = `<style id="art2569-school-assist-style">
+  .art2569-school-suggest-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:120;display:block;max-height:260px;overflow:auto;padding:5px;background:#fff;border:2px solid #0f172a;border-radius:12px;box-shadow:4px 4px 0 rgba(15,23,42,.18)}
+  .art2569-school-suggest-menu.hidden{display:none}
+  .art2569-school-suggest-option{display:block;width:100%;padding:8px 10px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;color:#334155;text-align:left;font-size:13px;line-height:1.35;cursor:pointer}
+  .art2569-school-suggest-option + .art2569-school-suggest-option{margin-top:4px}
+  .art2569-school-suggest-option:hover,.art2569-school-suggest-option:focus{background:#fce7f3;border-color:#ec4899;color:#be185d;outline:none}
+  </style>`;
+  if (!page.includes('art2569-school-assist-style')) page = page.replace('</head>', style + '</head>');
+  const schoolScript = `<script type="module" id="art2569-school-assist-script">
+import { db, COL, collection, getDocs } from '${moduleUrl}';
+(async function(){
+  if (window.__art2569SchoolAssistInstalled) return;
+  window.__art2569SchoolAssistInstalled = true;
+  const normalize = value => String(value || '').toLocaleLowerCase().replace(/[\\s\\u00a0]+/g,'').replace(/[.。,，:：;；']/g,'');
+  const displayName = value => String(value || '').trim().replace(/[\\s\\u00a0]+/g,' ');
+  function distance(a,b){
+    const prev = Array.from({length:b.length+1}, (_,i)=>i);
+    for(let i=1;i<=a.length;i++){
+      const cur=[i];
+      for(let j=1;j<=b.length;j++) cur[j]=Math.min(cur[j-1]+1,prev[j]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));
+      for(let j=0;j<cur.length;j++) prev[j]=cur[j];
+    }
+    return prev[b.length];
+  }
+  const similarity = (a,b) => { const max=Math.max(a.length,b.length); return max ? 1 - distance(a,b)/max : 1; };
+  const hasDigits = value => /\d/.test(value);
+  const commonPrefixLength = (a,b) => { let i=0; const max=Math.min(a.length,b.length); while(i<max && a[i]===b[i]) i++; return i; };
+  const commonSuffixLength = (a,b) => { let i=0; const max=Math.min(a.length,b.length); while(i<max && a[a.length-1-i]===b[b.length-1-i]) i++; return i; };
+  const isSafeTypo = (q,n) => {
+    if(!q || !n || q===n || hasDigits(q) || hasDigits(n)) return false;
+    const minLen=Math.min(q.length,n.length);
+    if(minLen<5 || distance(q,n)>2) return false;
+    if(q.startsWith(n)) return false;
+    if(n.startsWith(q)) return n.length-q.length<=2;
+    const prefix=commonPrefixLength(q,n);
+    const suffix=commonSuffixLength(q,n);
+    return prefix>=Math.max(8,minLen-2) && suffix>=2;
+  };
+  let schools=[];
+  try {
+    const results = await Promise.allSettled([
+      getDocs(collection(db, COL.PARTICIPANTS)),
+      getDocs(collection(db, COL.STAFF)),
+      getDocs(collection(db, COL.REQUESTS))
+    ]);
+    const values=[];
+    results.filter(result => result.status === 'fulfilled').forEach(result => result.value.forEach(row => {
+      const data=row.data() || {};
+      [data.school, data.participantSchool].forEach(value => { const name=displayName(value); if(name) values.push(name); });
+    }));
+    const seen=new Set();
+    schools=values.filter(name => { const key=normalize(name); if(seen.has(key)) return false; seen.add(key); return true; }).sort((a,b)=>a.localeCompare(b,'th'));
+  } catch (_) {}
+  const getInputs = () => Array.from(document.querySelectorAll('input')).filter(input => /school/i.test(input.id || '') || /school/i.test(input.name || '') || /โรงเรียน/i.test(input.placeholder || ''));
+  function bestMatch(value){
+    const q=normalize(value);
+    if(q.length<5) return null;
+    let best=null;
+    schools.forEach(name => {
+      const n=normalize(name);
+      if(!isSafeTypo(q,n)) return;
+      const score=similarity(q,n);
+      if(!best || score>best.score) best={name,score};
+    });
+    return best;
+  }
+  function render(input, menu){
+    const q=normalize(input.value);
+    const direct=q ? schools.filter(name => normalize(name).includes(q)) : schools.slice();
+    const close=(!direct.length && q) ? bestMatch(q) : null;
+    const items=direct.length ? direct : (close ? [close.name] : []);
+    menu.innerHTML='';
+    if(!items.length){ menu.classList.add('hidden'); return; }
+    items.forEach(name => {
+      const button=document.createElement('button');
+      button.type='button'; button.className='art2569-school-suggest-option'; button.textContent=name;
+      button.addEventListener('mousedown', event => { event.preventDefault(); input.value=name; input.dispatchEvent(new Event('change',{bubbles:true})); menu.classList.add('hidden'); input.dataset.art2569SchoolOpen='0'; });
+      menu.appendChild(button);
+    });
+    if(input.dataset.art2569SchoolOpen==='1') menu.classList.remove('hidden');
+  }
+  function attach(input){
+    if(input.dataset.art2569SchoolAssist==='1') return;
+    input.dataset.art2569SchoolAssist='1';
+    input.setAttribute('autocomplete','off');
+    const parent=input.parentElement || input;
+    if(getComputedStyle(parent).position==='static') parent.style.position='relative';
+    const menu=document.createElement('div');
+    menu.className='art2569-school-suggest-menu hidden';
+    menu.setAttribute('role','listbox');
+    parent.appendChild(menu);
+    let timer=null;
+    input.addEventListener('focus',()=>{ input.dataset.art2569SchoolOpen='1'; render(input,menu); });
+    input.addEventListener('click',()=>{ input.dataset.art2569SchoolOpen='1'; render(input,menu); });
+    input.addEventListener('input',()=>{
+      input.dataset.art2569SchoolOpen='1';
+      render(input,menu);
+      clearTimeout(timer);
+      timer=setTimeout(()=>{
+        const best=bestMatch(input.value);
+        const current=normalize(input.value);
+        if(best && best.score>=.84 && normalize(best.name)!==current){
+          input.value=best.name;
+          input.dispatchEvent(new Event('change',{bubbles:true}));
+          render(input,menu);
+        }
+      },1500);
+    });
+    input.addEventListener('blur',()=>setTimeout(()=>{ input.dataset.art2569SchoolOpen='0'; menu.classList.add('hidden'); },180));
+    render(input,menu);
+  }
+  getInputs().forEach(attach);
+})();
+` + closeScript;
+  return page.replace('</body>', schoolScript + '</body>');
 }
 
 function route() {
@@ -1363,6 +1667,8 @@ function route() {
   routedPage = addTeacherHomeRegistrationLink(routedPage, key);
   routedPage = addTeacherRegistrationPage(routedPage, key);
   routedPage = addTeacherPhoneGuard(routedPage, key);
+  routedPage = fixTeacherLogout(routedPage, key);
+  routedPage = addSchoolDirectoryAssist(routedPage, key);
   routedPage = addCheckinPrefixPicker(routedPage, key);
   routedPage = addScanTokenToCheckin(routedPage, key);
   routedPage = addScanTokenToUser(routedPage, key);
