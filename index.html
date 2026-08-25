@@ -1,7 +1,6 @@
 
 
 
-
 <!doctype html>
 <html lang="th">
 <head>
@@ -1018,6 +1017,35 @@ document.getElementById('list').addEventListener('click', e => { const btn = e.t
   return page;
 }
 
+function addPointCertificateImage(page, key) {
+  if (key === 'admin') {
+    page = page.replace(
+      '<div data-panel="points" class="hidden space-y-3">',
+      '<div data-panel="points" class="hidden space-y-3"><div class="card p-4"><p class="font-semibold text-sm mb-1">รูปประจำจุดบนหน้ารับเกียรติบัตร</p><p class="text-[11px] text-slate-500 mb-2">เลือกเปิดหรือปิดรูปของแต่ละจุดได้ทันที รูปจะปรากฏใต้หัวเว็บในหน้าใบรับเกียรติบัตร</p><div id="certificate-point-image-settings" class="space-y-2"><p class="text-xs text-slate-400">กำลังโหลดจุดเวิร์คช็อป...</p></div></div>'
+    );
+    page = page.replace(
+      "await addDoc(collection(db, COL.POINTS), { name, code, active: true, imageUrl, createdAt: serverTimestamp() });",
+      "await addDoc(collection(db, COL.POINTS), { name, code, active: true, imageUrl, certificateImageEnabled: true, createdAt: serverTimestamp() });"
+    );
+    page = page.replace(
+      "  const box = document.getElementById('points-list');",
+      "  const box = document.getElementById('points-list');\n  const certImageSettings = document.getElementById('certificate-point-image-settings');\n  if (certImageSettings) {\n    const imagePoints = allPoints.filter(p => p.imageUrl);\n    const esc = v => String(v || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\\"/g, '&quot;');\n    certImageSettings.innerHTML = imagePoints.length ? imagePoints.map(p => '<label class=\"flex items-center gap-2 border-2 border-slate-200 rounded-xl px-3 py-2 text-xs cursor-pointer\"><input type=\"checkbox\" data-cert-image=\"' + p.id + '\" ' + (p.certificateImageEnabled !== false ? 'checked' : '') + ' class=\"w-4 h-4\"> <span>แสดงรูปของจุด <b>' + esc(p.name) + '</b></span></label>').join('') : '<p class=\"text-xs text-slate-400\">ยังไม่มีจุดที่มีรูปภาพ</p>';\n    certImageSettings.querySelectorAll('[data-cert-image]').forEach(input => input.onchange = async () => {\n      try { await updateDoc(doc(db, COL.POINTS, input.getAttribute('data-cert-image')), { certificateImageEnabled: input.checked }); }\n      catch (err) { input.checked = !input.checked; alert('เปลี่ยนการแสดงรูปไม่สำเร็จ: ' + (err.message || err.code)); }\n    });\n  }"
+    );
+  }
+
+  if (key === 'certificate') {
+    page = page.replace(
+      '<p id="c-org" class="text-lg font-semibold text-slate-700"></p>',
+      '<p id="c-org" class="text-lg font-semibold text-slate-700"></p><div id="point-certificate-image-box" class="hidden w-full max-w-2xl mt-4 mb-4 p-3 bg-white border-2 border-slate-900 rounded-2xl shadow-[4px_4px_0_rgba(15,23,42,.9)]"><img id="point-certificate-image" class="w-full max-h-64 object-contain rounded-xl" alt="รูปภาพจุดเวิร์คช็อป"></div>'
+    );
+    page = page.replace(
+      '  const r = snap.data();',
+      "  const r = snap.data();\n  const pointImageBox = document.getElementById('point-certificate-image-box');\n  const pointImage = document.getElementById('point-certificate-image');\n  if (r.pointId && pointImageBox && pointImage) {\n    try {\n      const pointSnap = await getDoc(doc(db, COL.POINTS, r.pointId));\n      const point = pointSnap.exists() ? pointSnap.data() : null;\n      if (point && point.certificateImageEnabled !== false && point.imageUrl) {\n        pointImage.src = point.imageUrl;\n        pointImage.alt = 'รูปภาพจุดเวิร์คช็อป';\n        pointImageBox.classList.remove('hidden');\n      }\n    } catch (_) {}\n  }"
+    );
+  }
+  return page;
+}
+
 function route() {
   const raw = location.hash.slice(1) || '';
   const isZero = raw.split('?')[0] === '0' || /\/0\/?$/.test(location.pathname);
@@ -1043,6 +1071,7 @@ function route() {
   routedPage = addScanTokenToAdmin(routedPage, key);
   routedPage = addStatusColumnToApproved(routedPage, key);
   routedPage = addCertificateAnnouncementUI(routedPage, key);
+  routedPage = addPointCertificateImage(routedPage, key);
   view.srcdoc = routedPage;
   document.title = `ART2569 — ${key === 'teacherregister' ? 'ลงทะเบียนครู' : key}`;
 }
